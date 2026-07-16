@@ -56,6 +56,7 @@ function testBindings(bucket: MemoryBucket): WorkerBindings {
   } as unknown as D1Database;
   return {
     DB: noopDatabase,
+    ROOMS: {} as DurableObjectNamespace,
     TILES: bucket as unknown as R2Bucket,
     ASSETS: {
       fetch: () => Promise.resolve(new Response('asset')),

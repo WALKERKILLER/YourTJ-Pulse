@@ -21,6 +21,7 @@ const credentials = [
 function bindings(database: D1Database, overrides: Partial<WorkerBindings> = {}): WorkerBindings {
   return {
     DB: database,
+    ROOMS: {} as DurableObjectNamespace,
     TILES: {} as R2Bucket,
     ASSETS: { fetch: () => Promise.resolve(new Response('asset')) } as unknown as Fetcher,
     TRUSTED_SESSION_TOKENS_JSON: JSON.stringify(credentials),

@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 
 import { placesRouter } from './routes/places';
 import { pinsRouter } from './routes/pins';
+import { realtimeRouter } from './routes/realtime';
 import { roomsRouter } from './routes/rooms';
 import { sessionRouter } from './routes/session';
 import { adminSubmissionsRouter, submissionsRouter } from './routes/submissions';
@@ -10,6 +11,8 @@ import { twinRouter } from './routes/twin';
 import type { WorkerEnv } from './types';
 import { enforceCors } from './utils/cors';
 import { ApiError, jsonError } from './utils/responses';
+
+export { RoomDurableObject } from './durable-objects/room';
 
 export function createApp() {
   const app = new Hono<WorkerEnv>();
@@ -22,6 +25,7 @@ export function createApp() {
   apiRouter.route('/', submissionsRouter);
   apiRouter.route('/rooms', roomsRouter);
   apiRouter.route('/pins', pinsRouter);
+  apiRouter.route('/realtime', realtimeRouter);
   apiRouter.route('/twin', twinRouter);
   apiRouter.route('/admin/submissions', adminSubmissionsRouter);
 

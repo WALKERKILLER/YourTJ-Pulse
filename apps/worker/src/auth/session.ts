@@ -33,6 +33,10 @@ export function bearerToken(authorization: string | undefined) {
 }
 
 export function authenticateToken(token: string, env: WorkerBindings) {
+  return authenticateSession(token, env)?.user;
+}
+
+export function authenticateSession(token: string, env: WorkerBindings) {
   const configuredCredentials = env.TRUSTED_SESSION_TOKENS_JSON ?? env.AUTH_TOKENS_JSON;
   if (configuredCredentials === undefined) return undefined;
 
@@ -46,7 +50,7 @@ export function authenticateToken(token: string, env: WorkerBindings) {
 
   const credential = credentials.find((candidate) => constantTimeEqual(candidate.token, token));
   if (!credential || (credential.expiresAt && credential.expiresAt <= new Date().toISOString())) return undefined;
-  return credential.user;
+  return { user: credential.user, expiresAt: credential.expiresAt };
 }
 
 export function developmentUser(env: WorkerBindings): AuthenticatedUser | undefined {

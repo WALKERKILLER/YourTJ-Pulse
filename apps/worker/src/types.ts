@@ -4,6 +4,7 @@ export interface WorkerBindings {
   ASSETS: Fetcher;
   APP_ENV?: string;
   DB: D1Database;
+  ROOMS: DurableObjectNamespace;
   TILES: R2Bucket;
   AUTH_TOKENS_JSON?: string;
   CORS_ORIGINS?: string;

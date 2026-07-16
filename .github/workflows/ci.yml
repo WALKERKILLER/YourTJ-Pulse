@@ -49,6 +49,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Verify generated realtime contracts
+        run: pnpm contracts:check
+
       - name: Validate local D1 migrations
         run: pnpm --filter @yourtj/worker db:migrate:local && pnpm --filter @yourtj/worker db:check:local
 
