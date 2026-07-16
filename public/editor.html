@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>数据编辑器 - 同济地图</title>
+  <title>数据编辑器 - YourTJ Pulse</title>
   <link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/pmtiles@3/dist/pmtiles.js"></script>
@@ -232,9 +232,9 @@ var E = (function(){
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({features:[feat],user:'editor'})
-    }).then(function(r){return r.json()}).then(function(d){
-      if(d.ok)T('已提交: '+(curTags.name||curTags['name:zh']||oid)+' → 待审核');
-      else T('失败: '+(d.error||''));
+    }).then(function(r){return r.json().then(function(d){if(!r.ok)throw new Error((d.error&&d.error.message)||'提交失败');return d;})}).then(function(d){
+      if(d.ok||d.data)T('已提交: '+(curTags.name||curTags['name:zh']||oid)+' → 待审核');
+      else T('失败: 响应格式错误');
     }).catch(function(e){T('网络错误: '+e.message)}).finally(function(){btn.disabled=false;btn.textContent='提交推送'});
   }
 

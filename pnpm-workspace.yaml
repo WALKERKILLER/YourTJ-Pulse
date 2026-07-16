@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# 这些包已提供平台二进制，当前构建不依赖其 lifecycle 脚本。
+ignoredBuiltDependencies:
+  - esbuild
+  - sharp
+  - workerd

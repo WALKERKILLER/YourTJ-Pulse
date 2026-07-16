@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>审核管理 - 同济地图</title>
+  <title>审核管理 - YourTJ Pulse</title>
   <link href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css" rel="stylesheet">
   <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
   <script src="https://unpkg.com/pmtiles@3/dist/pmtiles.js"></script>
@@ -99,9 +99,26 @@
 
   <script>
     var Admin = (function () {
-      var map, submissions = [], selectedIdx = -1, selectedDetail = null, masterMap = {};
+      var map, submissions = [], selectedIdx = -1, selectedDetail = null, masterMap = {}, accessToken = '';
+
+      function apiFetch(url, options) {
+        options = options || {};
+        options.headers = options.headers || {};
+        options.headers.Authorization = 'Bearer ' + accessToken;
+        return fetch(url, options).then(function (response) {
+          return response.json().then(function (payload) {
+            if (!response.ok) throw new Error((payload.error && payload.error.message) || '请求失败');
+            return payload.data;
+          });
+        });
+      }
 
       function init() {
+        accessToken = window.prompt('请输入管理员 Access Token（仅保存在当前页面内存中）') || '';
+        if (!accessToken) {
+          document.getElementById('hint').textContent = '未提供 Access Token';
+          return;
+        }
         var protocol = new pmtiles.Protocol();
         maplibregl.addProtocol('pmtiles', protocol.tile);
 
@@ -148,8 +165,7 @@
       }
 
       function loadSubmissions() {
-        fetch('/api/submissions')
-          .then(function (r) { return r.json(); })
+        apiFetch('/api/admin/submissions')
           .then(function (data) {
             submissions = data;
             renderList();
@@ -190,7 +206,7 @@
         if (!s) return;
 
         Promise.all([
-          fetch('/api/submissions/' + s.id).then(function (r) { return r.json(); }),
+          apiFetch('/api/admin/submissions/' + s.id),
           fetch('/api/custom-data').then(function (r) { return r.json(); })
         ]).then(function (results) {
           selectedDetail = results[0];
@@ -320,15 +336,13 @@
         if (selectedIdx < 0) return toast('请先选择一条提交');
         if (!confirm('确认应用此提交？将覆盖主库对应要素。')) return;
         var s = submissions[selectedIdx];
-        fetch('/api/submissions/' + s.id, {
+        apiFetch('/api/admin/submissions/' + s.id + '/apply', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'apply' })
+          body: JSON.stringify({})
         })
-        .then(function (r) { return r.json(); })
         .then(function (data) {
-          if (data.ok) { toast('已应用！主库现有 ' + data.totalFeatures + ' 个要素'); }
-          else { toast('失败: ' + (data.error || '')); }
+          toast('已应用！主库现有 ' + data.totalFeatures + ' 个要素');
           loadSubmissions();
           selectedIdx = -1;
           selectedDetail = null;
@@ -341,15 +355,13 @@
         if (selectedIdx < 0) return toast('请先选择一条提交');
         if (!confirm('确认拒绝此提交？')) return;
         var s = submissions[selectedIdx];
-        fetch('/api/submissions/' + s.id, {
+        apiFetch('/api/admin/submissions/' + s.id + '/reject', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'reject' })
+          body: JSON.stringify({})
         })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) toast('已拒绝');
-          else toast('失败: ' + (data.error || ''));
+        .then(function () {
+          toast('已拒绝');
           loadSubmissions();
           selectedIdx = -1;
           selectedDetail = null;

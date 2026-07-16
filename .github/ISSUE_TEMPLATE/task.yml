@@ -1,0 +1,74 @@
+name: Development task
+description: 对应开发计划中的单个 TASK
+title: ""
+labels:
+  - "status:ready"
+body:
+  - type: markdown
+    attributes:
+      value: Issue 标题请使用英文 Conventional Commits 风格，正文使用中文。
+  - type: input
+    id: task
+    attributes:
+      label: TASK 编号
+      placeholder: TASK-010
+    validations:
+      required: true
+  - type: textarea
+    id: background
+    attributes:
+      label: 背景
+      description: 说明为什么需要该任务。
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: 目标
+      description: 说明完成后用户或系统具有什么能力。
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 实现范围
+      placeholder: |
+        - [ ] 工作项一
+        - [ ] 工作项二
+    validations:
+      required: true
+  - type: textarea
+    id: out-of-scope
+    attributes:
+      label: 不在本任务范围
+    validations:
+      required: true
+  - type: textarea
+    id: api-data
+    attributes:
+      label: API 或数据变化
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      placeholder: |
+        - [ ] 功能行为可验证
+        - [ ] 测试通过
+        - [ ] 文档更新
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: 测试方法
+    validations:
+      required: true
+  - type: textarea
+    id: dependencies
+    attributes:
+      label: 依赖
+  - type: textarea
+    id: risks
+    attributes:
+      label: 风险
+      description: 说明隐私、安全、兼容性或性能风险。

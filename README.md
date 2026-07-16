@@ -1,114 +1,65 @@
-# 同济大学地图 (Tongji Map)
+# YourTJ Pulse
 
-基于 Cloudflare Workers + MapLibre GL 的交互式地图，数据来自 OpenStreetMap，瓦片由 PMTiles 提供。
+![YourTJ Pulse 仓库 Logo](repo-logo.png)
 
-## 技术栈
+YourTJ Pulse 是面向同济大学的实时协作地图与数字校园分身平台。项目从原 YTJ-Map 演进而来：基础地图继续使用 OpenStreetMap、MapLibre 与 PMTiles，应用层逐步扩展地点搜索、校园导航、多人房间和 PulseTown 数字校园模式。
 
-- **前端**: 纯 HTML/CSS/JS（零框架），MapLibre GL v4 + PMTiles v3
-- **后端**: Cloudflare Workers
-- **存储**: Cloudflare R2（矢量瓦片 + GeoJSON 数据）
-- **部署**: Wrangler v4
+当前处于工程与安全基线阶段。旧地图、编辑器和审核页仍保留，React Web、校园世界编译器与 Flutter 示例将按 `map-plan.md` 分阶段接入。
+
+## 产品模式
+
+- 地图模式：校园建筑与道路、POI、导航、实时位置共享和协作点位。
+- PulseTown：与真实校园空间共享地点和路网数据的游戏化数字校园；模拟分身位置必须与 GPS 明确区分。
+
+## 当前技术栈
+
+- Worker：Cloudflare Workers、Hono、TypeScript、R2。
+- 契约：Zod、共享 TypeScript Schema、统一 API 响应。
+- 旧版地图：MapLibre GL、PMTiles、原生 HTML/CSS/JavaScript。
+- 工程：pnpm Workspace、Vitest、ESLint、GitHub Actions。
 
 ## 项目结构
 
-```
-severless/                  # 前端 + Worker 部署项目
-  public/                   # 静态资源 (Workers Assets)
-    index.html              # 地图主页
-    editor.html             # OSM Tags 编辑器
-    admin.html              # 提交审核管理
-    assets/
-      js/tj-map.js          # 地图初始化模块
-      data/custom.geojson   # 用户编辑数据（主库）
-  src/index.js              # Worker 入口（API + R2 代理）
-  tongji.pmtiles            # PMTiles 瓦片（本地参考）
-  wrangler.toml
-
-YTJ-Map/                    # 数据生成项目
-  map.osm                   # OSM 源数据
-  full.geojson              # OSM → GeoJSON 全量转换
-  split.js                  # 按分类 + geometry 拆分 GeoJSON
-  gen-custom.js             # 生成 custom.geojson
-  geojson/                  # 拆分后的分类 GeoJSON
+```text
+apps/worker/                # 模块化 Cloudflare Worker
+  src/auth/                 # Bearer 身份认证与角色授权
+  src/routes/               # Tiles、地点和审核路由
+  src/repositories/         # R2 数据访问
+packages/contracts/         # API、GeoJSON 与实时协议 Schema
+packages/data-pipeline/     # 数据校验和后续世界编译入口
+public/                     # 迁移期保留的旧地图、编辑器和管理页
+data/                       # OSM/GeoJSON 数据与旧构建脚本
+.github/                    # CI、Issue 与 PR 模板
 ```
 
-## 开发
+## 本地开发
+
+要求：Node.js 22、pnpm 10.33、Wrangler 4、osmium、tippecanoe。仓库提供 `.mise.toml`，首次使用时请自行检查内容后运行 `mise trust`。
 
 ```bash
-npm run dev           # 本地开发服务器 (localhost:8787)
-npm run deploy        # 部署到 Cloudflare
+corepack enable
+pnpm install
+cp apps/worker/.dev.vars.example apps/worker/.dev.vars
+pnpm dev
 ```
 
-## 数据构建流程
+`.dev.vars` 中的 Token 必须替换为本地随机值，且不得提交。管理页会在打开时请求 Access Token，并只保存在当前页面内存中。
 
-当 OSM 源数据 (`YTJ-Map/map.osm`) 更新后，按以下步骤重新生成：
-
-### 1. OSM → GeoJSON
-
-使用 `osmium` 将 OSM PBF/XML 转为 GeoJSON：
+提交前执行完整本地门禁：
 
 ```bash
-osmium export map.osm -o full.geojson
+pnpm lint
+pnpm typecheck
+pnpm test
+pnpm build
+pnpm data:validate
 ```
 
-### 2. 拆分 GeoJSON
+## 数据构建
 
-按分类标签 + geometry 类型拆分为独立文件：
+`pnpm data:validate` 会检查当前全量 GeoJSON 和旧地图主数据的结构、坐标范围与重复 ID。`pnpm data:build` 目前执行同一基线校验；后续 TASK-200～206 会在该入口加入稳定地点 ID、导航图、场景、碰撞数据、PMTiles、manifest 与 checksum。
 
-```bash
-cd YTJ-Map
-node split.js
-```
-
-输出：`geojson/buildings.geojson`, `roads.geojson`, `water.geojson`, `waterway.geojson`, `landuse.geojson`, `pois.geojson`, `misc.geojson`, `misc-line.geojson`, `misc-point.geojson`
-
-拆分规则（按优先级）：
-| 分类 | 匹配条件 | Geometry |
-|------|----------|----------|
-| buildings | `building=*` | Polygon |
-| roads | `highway=*` | LineString |
-| water | `natural=water` / `waterway=*` / `water=*` | Polygon |
-| waterway | 同上 | LineString |
-| landuse | `landuse=*` / `leisure=*` / `natural=*` | 全部 |
-| pois | `name=*` | Point |
-| misc | 未匹配的 | Polygon |
-| misc-line | 未匹配的 | LineString |
-| misc-point | 未匹配的 | Point |
-
-### 3. 生成 custom.geojson
-
-合并各分类 GeoJSON，附加 `_layer` 和 `_geom_type` 元数据：
-
-```bash
-node gen-custom.js
-```
-
-输出写入 `severless/public/assets/data/custom.geojson`
-
-### 4. 生成 PMTiles
-
-```bash
-tippecanoe -o tongji.pmtiles -z14 -Z0 --no-feature-limit --no-tile-size-limit --force \
-  -L buildings:geojson/buildings.geojson \
-  -L roads:geojson/roads.geojson \
-  -L water:geojson/water.geojson \
-  -L waterway:geojson/waterway.geojson \
-  -L pois:geojson/pois.geojson \
-  -L landuse:geojson/landuse.geojson \
-  -L misc:geojson/misc.geojson \
-  -L misc-line:geojson/misc-line.geojson \
-  -L misc-point:geojson/misc-point.geojson
-```
-
-将生成的 `tongji.pmtiles` 复制到 `severless/` 目录。
-
-### 5. 部署
-
-```bash
-cd severless
-npx wrangler r2 object put ytj-map/tongji.pmtiles --file=./tongji.pmtiles --remote
-npm run deploy
-```
+地图与游戏世界必须使用同一地点 ID。正式地图 Feature、临时协作 Pin 与模拟分身位置不得混用。
 
 ## API 端点
 
@@ -117,12 +68,25 @@ npm run deploy
 | `/tiles/*` | GET | R2 代理 — PMTiles 瓦片请求 |
 | `/api/custom-data` | GET | 获取主库 GeoJSON |
 | `/api/submit` | POST | 提交编辑（feature → 待审核） |
-| `/api/submissions` | GET | 列出待审核提交 |
-| `/api/submissions/:id` | GET | 获取单个提交详情（含 features） |
-| `/api/submissions/:id` | POST | 审核操作（`apply` / `reject`） |
+| `/api/admin/submissions` | GET | 列出待审核提交（moderator/admin） |
+| `/api/admin/submissions/:id` | GET | 获取提交详情（moderator/admin） |
+| `/api/admin/submissions/:id/apply` | POST | 应用提交（moderator/admin） |
+| `/api/admin/submissions/:id/reject` | POST | 拒绝提交（moderator/admin） |
+
+所有 API 错误使用 `{ "error": { "code", "message", "details" } }`。新管理 API 的成功响应使用 `{ "data": ... }`；旧 `/api/submit` 与 `/api/submissions*` 在迁移期保留原成功响应形状，但审核路径同样要求 Bearer Token 和角色授权。
 
 ## 编辑与审核流程
 
-1. 用户在 `editor.html` 点击地图要素 → 编辑 OSM tags → 提交
-2. 提交写入 R2 `submissions/{id}.json`（status: pending）
-3. 管理员在 `admin.html` 审核 → apply（合并到 `custom.geojson`）或 reject
+1. 用户在旧编辑器中提交经过共享 Schema 校验的 GeoJSON Feature。
+2. Worker 将提交写入 R2 审核队列；非法坐标、超量要素和超大请求会在写入前拒绝。
+3. 审核员使用 Bearer Token 访问管理 API；未登录返回 401，角色不足返回 403。
+4. 应用或拒绝结果会记录审核者、审核时间和可选说明。
+
+## 安全与隐私
+
+- 仓库不含默认管理员密钥，不接受 URL Query Token 或明文 Cookie Token。
+- 跨域只允许同源或 `CORS_ORIGINS` 明确列出的来源。
+- 不提交 `.env`、`.dev.vars`、Cookie、Access Token 或真实位置数据。
+- 第一版默认不共享位置、不保存永久 GPS 轨迹，并始终区分 GPS 与模拟分身。
+
+贡献方式见 `CONTRIBUTING.md`，漏洞报告方式见 `SECURITY.md`，完整实施顺序见 `map-plan.md`（规划文件当前位于仓库工作目录上层）。
