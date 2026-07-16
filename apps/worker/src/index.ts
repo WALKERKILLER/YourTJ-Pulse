@@ -1,9 +1,12 @@
 import { Hono } from 'hono';
 
 import { placesRouter } from './routes/places';
+import { pinsRouter } from './routes/pins';
+import { roomsRouter } from './routes/rooms';
 import { sessionRouter } from './routes/session';
 import { adminSubmissionsRouter, submissionsRouter } from './routes/submissions';
 import { tilesRouter } from './routes/tiles';
+import { twinRouter } from './routes/twin';
 import type { WorkerEnv } from './types';
 import { enforceCors } from './utils/cors';
 import { ApiError, jsonError } from './utils/responses';
@@ -17,6 +20,9 @@ export function createApp() {
   apiRouter.route('/', placesRouter);
   apiRouter.route('/', sessionRouter);
   apiRouter.route('/', submissionsRouter);
+  apiRouter.route('/rooms', roomsRouter);
+  apiRouter.route('/pins', pinsRouter);
+  apiRouter.route('/twin', twinRouter);
   apiRouter.route('/admin/submissions', adminSubmissionsRouter);
 
   app.route('/api', apiRouter);

@@ -13,7 +13,7 @@ YourTJ Pulse 是面向同济大学的实时协作地图与数字校园分身平�
 
 ## 当前技术栈
 
-- Worker：Cloudflare Workers、Hono、TypeScript、R2。
+- Worker：Cloudflare Workers、Hono、TypeScript、D1、R2。
 - 契约：Zod、共享 TypeScript Schema、统一 API 响应。
 - Web：React 19、Vite、MapLibre GL、PMTiles、TanStack Query、Zustand。
 - 数据：稳定 ID、WGS84/本地场景坐标、导航图、场景与碰撞数据编译器。
@@ -25,8 +25,9 @@ YourTJ Pulse 是面向同济大学的实时协作地图与数字校园分身平�
 apps/web/                   # React 地图、编辑器、审核台与旧版入口
 apps/worker/                # 模块化 Cloudflare Worker
   src/auth/                 # Bearer 身份认证与角色授权
-  src/routes/               # Tiles、地点和审核路由
-  src/repositories/         # R2 数据访问
+  src/routes/               # 地点、路线、房间、协作点、Twin 与审核路由
+  src/repositories/         # D1 业务数据与 R2 地图/审核数据访问
+  migrations/               # D1 核心表与约束
 packages/contracts/         # API、GeoJSON 与实时协议 Schema
 packages/campus-style/      # Web 共用地图样式与交互图层 ID
 packages/data-pipeline/     # 校园世界编译与产物校验
@@ -44,10 +45,11 @@ data/                       # 源 GeoJSON、世界配置、稳定 ID 映射与�
 corepack enable
 pnpm install
 cp apps/worker/.dev.vars.example apps/worker/.dev.vars
+pnpm --filter @yourtj/worker db:migrate:local
 pnpm dev
 ```
 
-`.dev.vars` 中的 Token 必须替换为本地随机值，且不得提交。管理页会在打开时请求 Access Token，并只保存在当前页面内存中。
+`.dev.vars` 可通过 `DEV_AUTH_ENABLED=true` 使用显式本地身份；该开关不得用于生产。Bearer Session 测试值必须替换为本地随机值，且不得提交。生产只接受 YourTJ OAuth/OIDC 网关签发并注入 `TRUSTED_SESSION_TOKENS_JSON` 的可信会话，不信任请求体中的用户字段。
 
 提交前执行完整本地门禁：
 
@@ -82,24 +84,37 @@ pnpm data:validate
 |------|------|------|
 | `/tiles/*` | GET | R2 代理 — PMTiles 瓦片请求 |
 | `/api/custom-data` | GET | 获取主库 GeoJSON |
+| `/api/me` | GET | 当前可信会话用户 |
+| `/api/places`、`/api/places/:id` | GET | 地点目录与详情 |
+| `/api/search` | GET | 名称、拼音、英文、编号与类别搜索 |
+| `/api/routes` | POST | 步行、骑行或无障碍路线 |
+| `/api/rooms` | POST | 创建协作房间 |
+| `/api/rooms/:id` | GET、DELETE | 房间详情或由房主删除 |
+| `/api/rooms/:id/join`、`/leave` | POST | 加入或离开房间 |
+| `/api/pins` | GET、POST | 查询或创建可见协作点 |
+| `/api/pins/:id` | GET、PATCH、DELETE | 协作点详情、版本化更新或删除 |
+| `/api/pins/:id/comments` | GET、POST | 协作点评论 |
+| `/api/twin/profile` | GET、PATCH | 当前用户的 Twin 配置 |
+| `/api/twin/events` | GET、POST | 目的地/日程事件；不接收 GPS 轨迹 |
 | `/api/submit` | POST | 提交编辑（feature → 待审核） |
 | `/api/admin/submissions` | GET | 列出待审核提交（moderator/admin） |
 | `/api/admin/submissions/:id` | GET | 获取提交详情（moderator/admin） |
 | `/api/admin/submissions/:id/apply` | POST | 应用提交（moderator/admin） |
 | `/api/admin/submissions/:id/reject` | POST | 拒绝提交（moderator/admin） |
 
-所有 API 错误使用 `{ "error": { "code", "message", "details" } }`。新管理 API 的成功响应使用 `{ "data": ... }`；旧 `/api/submit` 与 `/api/submissions*` 在迁移期保留原成功响应形状，但审核路径同样要求 Bearer Token 和角色授权。
+所有新 API 使用 `{ "data": ... }` 或 `{ "error": { "code", "message", "details" } }`。旧 `/api/submit` 与 `/api/submissions*` 在迁移期保留原成功响应形状，但审核路径同样要求可信 Session 和角色授权。
 
 ## 编辑与审核流程
 
 1. 用户在旧编辑器中提交经过共享 Schema 校验的 GeoJSON Feature。
 2. Worker 将提交写入 R2 审核队列；非法坐标、超量要素和超大请求会在写入前拒绝。
 3. 审核员使用 Bearer Token 访问管理 API；未登录返回 401，角色不足返回 403。
-4. 应用或拒绝结果会记录审核者、审核时间和可选说明。
+4. 应用或拒绝结果会记录审核者、审核时间、可选说明和 D1 审计日志。
 
 ## 安全与隐私
 
 - 仓库不含默认管理员密钥，不接受 URL Query Token 或明文 Cookie Token。
+- 开发身份仅在 `DEV_AUTH_ENABLED=true` 时生效；生产必须使用 YourTJ OAuth/OIDC 或可信 Session。
 - 跨域只允许同源或 `CORS_ORIGINS` 明确列出的来源。
 - 不提交 `.env`、`.dev.vars`、Cookie、Access Token 或真实位置数据。
 - 第一版默认不共享位置、不保存永久 GPS 轨迹，并始终区分 GPS 与模拟分身。

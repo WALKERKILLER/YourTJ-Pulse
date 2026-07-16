@@ -49,6 +49,9 @@ jobs:
       - name: Typecheck
         run: pnpm typecheck
 
+      - name: Validate local D1 migrations
+        run: pnpm --filter @yourtj/worker db:migrate:local && pnpm --filter @yourtj/worker db:check:local
+
       - name: Test
         run: pnpm test
 

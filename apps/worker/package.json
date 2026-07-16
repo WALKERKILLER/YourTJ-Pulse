@@ -10,9 +10,12 @@
     "test": "vitest run",
     "lint": "eslint src test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local --config wrangler.jsonc",
+    "db:check:local": "wrangler d1 execute DB --local --config wrangler.jsonc --command \"SELECT count(*) AS core_tables FROM sqlite_schema WHERE type = 'table' AND name IN ('users','rooms','room_members','pins','pin_comments','feature_revisions','twin_profiles','twin_events','audit_logs'); SELECT count(*) AS core_indexes FROM sqlite_schema WHERE type = 'index' AND name LIKE '%_idx';\"",
     "deploy": "wrangler deploy --config wrangler.jsonc"
   },
   "dependencies": {
+    "@yourtj/campus-navigation": "workspace:*",
     "@yourtj/contracts": "workspace:*",
     "hono": "^4.12.30",
     "zod": "^4.4.3"

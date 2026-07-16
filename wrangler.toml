@@ -2,6 +2,9 @@ name = "yourtj-pulse"
 main = "apps/worker/src/index.ts"
 compatibility_date = "2026-06-28"
 
+[vars]
+APP_ENV = "production"
+
 [assets]
 directory = "./apps/web/dist"
 binding = "ASSETS"
@@ -15,3 +18,8 @@ zone_name = "lyra4.icu"
 [[r2_buckets]]
 binding = "TILES"
 bucket_name = "ytj-map"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "yourtj-pulse"
+migrations_dir = "apps/worker/migrations"

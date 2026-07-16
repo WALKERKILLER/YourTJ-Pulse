@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   API_LIMITS,
+  createTwinEventSchema,
   isWebSocketMessageWithinLimit,
   locationUpdateSchema,
   submitFeatureSchema,
@@ -66,6 +67,20 @@ describe('submitFeatureSchema', () => {
         ],
       }).success,
     ).toBe(false);
+  });
+});
+
+describe('createTwinEventSchema', () => {
+  it('accepts destination events without retaining GPS samples', () => {
+    expect(createTwinEventSchema.safeParse({
+      eventType: 'class', destinationPlaceId: 'place-1', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', metadata: { course: '高等数学' },
+    }).success).toBe(true);
+    expect(createTwinEventSchema.safeParse({
+      eventType: 'location', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', metadata: { latitude: 31.28 },
+    }).success).toBe(false);
+    expect(createTwinEventSchema.safeParse({
+      eventType: 'class', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', metadata: { nested: { coordinates: [121.5, 31.28] } },
+    }).success).toBe(false);
   });
 });
 

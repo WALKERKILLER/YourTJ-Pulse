@@ -18,6 +18,7 @@ class MemoryBucket {
     const responseBytes =
       range === undefined ? bytes : bytes.slice(range.offset, range.offset + range.length);
     return {
+      etag: `etag:${value}`,
       body: new Blob([responseBytes]).stream(),
       size: bytes.byteLength,
       httpEtag: '"test-etag"',
@@ -30,10 +31,13 @@ class MemoryBucket {
     };
   }
 
-  async put(key: string, value: string | ArrayBuffer | ArrayBufferView | ReadableStream) {
+  async put(key: string, value: string | ArrayBuffer | ArrayBufferView | ReadableStream, options?: { onlyIf?: { etagMatches?: string; etagDoesNotMatch?: string } }) {
     if (typeof value !== 'string') throw new Error('MemoryBucket only supports string test values');
+    const current = this.values.get(key);
+    if (options?.onlyIf?.etagMatches && (!current || options.onlyIf.etagMatches !== `etag:${current}`)) return null;
+    if (options?.onlyIf?.etagDoesNotMatch === '*' && current !== undefined) return null;
     this.values.set(key, value);
-    return {};
+    return { etag: `etag:${value}` };
   }
 
   json<T>(key: string) {
@@ -44,7 +48,14 @@ class MemoryBucket {
 }
 
 function testBindings(bucket: MemoryBucket): WorkerBindings {
+  const noopDatabase = {
+    prepare: () => ({
+      bind() { return this; },
+      run: () => Promise.resolve({ success: true, meta: { changes: 1 } }),
+    }),
+  } as unknown as D1Database;
   return {
+    DB: noopDatabase,
     TILES: bucket as unknown as R2Bucket,
     ASSETS: {
       fetch: () => Promise.resolve(new Response('asset')),
