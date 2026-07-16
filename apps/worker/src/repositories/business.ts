@@ -85,6 +85,7 @@ interface AuditRow {
 interface TwinProfileRow {
   user_id: string;
   enabled: number;
+  simulation_enabled: number;
   home_place_id: string | null;
   avatar_id: string | null;
   privacy_mode: TwinPrivacyMode;
@@ -93,12 +94,14 @@ interface TwinProfileRow {
 
 interface TwinEventRow {
   id: string;
-  event_type: string;
+  event_type: CreateTwinEventInput['type'];
+  origin_place_id: string | null;
   destination_place_id: string | null;
   start_at: string;
   end_at: string | null;
   source: CreateTwinEventInput['source'];
-  metadata_json: string | null;
+  schedule_json: string | null;
+  created_at: string;
 }
 
 export interface RoomRecord {
@@ -704,10 +707,11 @@ export async function listPinActivity(db: D1Database, pinId: string, user: Authe
 
 export async function getTwinProfile(db: D1Database, userId: string) {
   const row = await db.prepare('SELECT * FROM twin_profiles WHERE user_id = ?').bind(userId).first<TwinProfileRow>();
-  if (!row) return { userId, enabled: false, homePlaceId: null, avatarId: null, privacyMode: 'private' as const, updatedAt: null };
+  if (!row) return { userId, enabled: false, simulationEnabled: false, homePlaceId: null, avatarId: null, privacyMode: 'private' as const, updatedAt: null };
   return {
     userId: row.user_id,
     enabled: row.enabled === 1,
+    simulationEnabled: row.simulation_enabled === 1,
     homePlaceId: row.home_place_id,
     avatarId: row.avatar_id,
     privacyMode: row.privacy_mode,
@@ -717,8 +721,14 @@ export async function getTwinProfile(db: D1Database, userId: string) {
 
 export async function updateTwinProfile(db: D1Database, user: AuthenticatedUser, input: UpdateTwinProfileInput) {
   const current = await getTwinProfile(db, user.id);
+  const enabled = input.enabled ?? current.enabled;
+  const requestedSimulation = input.simulationEnabled ?? current.simulationEnabled;
+  if (requestedSimulation && !enabled) {
+    throw new ApiError(400, 'TWIN_OPT_IN_REQUIRED', 'Twin profile must be enabled before simulation can be enabled');
+  }
   const profile = {
-    enabled: input.enabled ?? current.enabled,
+    enabled,
+    simulationEnabled: enabled && requestedSimulation,
     homePlaceId: input.homePlaceId === undefined ? current.homePlaceId : input.homePlaceId,
     avatarId: input.avatarId === undefined ? current.avatarId : input.avatarId,
     privacyMode: input.privacyMode ?? current.privacyMode,
@@ -726,11 +736,11 @@ export async function updateTwinProfile(db: D1Database, user: AuthenticatedUser,
   };
   await db.batch([
     db.prepare(
-      `INSERT INTO twin_profiles (user_id, enabled, home_place_id, avatar_id, privacy_mode, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?)
-       ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, home_place_id = excluded.home_place_id,
+      `INSERT INTO twin_profiles (user_id, enabled, simulation_enabled, home_place_id, avatar_id, privacy_mode, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, simulation_enabled = excluded.simulation_enabled, home_place_id = excluded.home_place_id,
          avatar_id = excluded.avatar_id, privacy_mode = excluded.privacy_mode, updated_at = excluded.updated_at`,
-    ).bind(user.id, profile.enabled ? 1 : 0, profile.homePlaceId, profile.avatarId, profile.privacyMode, profile.updatedAt),
+    ).bind(user.id, profile.enabled ? 1 : 0, profile.simulationEnabled ? 1 : 0, profile.homePlaceId, profile.avatarId, profile.privacyMode, profile.updatedAt),
     auditStatement(db, user.id, 'twin.profile.update', 'twin_profile', user.id),
   ]);
   return { userId: user.id, ...profile };
@@ -741,24 +751,27 @@ export async function listTwinEvents(db: D1Database, userId: string) {
     .bind(userId).all<TwinEventRow>();
   return result.results.map((row) => ({
     id: row.id,
-    eventType: row.event_type,
+    type: row.event_type,
+    originPlaceId: row.origin_place_id,
     destinationPlaceId: row.destination_place_id,
     startAt: row.start_at,
     endAt: row.end_at,
     source: row.source,
-    metadata: row.metadata_json ? JSON.parse(row.metadata_json) as unknown : null,
+    schedule: row.schedule_json ? JSON.parse(row.schedule_json) as unknown : null,
+    createdAt: row.created_at,
   }));
 }
 
 export async function createTwinEvent(db: D1Database, user: AuthenticatedUser, input: CreateTwinEventInput) {
   const id = crypto.randomUUID();
+  const createdAt = now();
   await db.batch([
     db.prepare(
-      `INSERT INTO twin_events (id, user_id, event_type, destination_place_id, start_at, end_at, source, metadata_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    ).bind(id, user.id, input.eventType, input.destinationPlaceId ?? null, input.startAt, input.endAt ?? null,
-      input.source, input.metadata === undefined || input.metadata === null ? null : JSON.stringify(input.metadata)),
+      `INSERT INTO twin_events (id, user_id, event_type, origin_place_id, destination_place_id, start_at, end_at, source, schedule_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).bind(id, user.id, input.type, input.originPlaceId ?? null, input.destinationPlaceId, input.startAt, input.endAt ?? null,
+      input.source, input.schedule === undefined || input.schedule === null ? null : JSON.stringify(input.schedule), createdAt),
     auditStatement(db, user.id, 'twin.event.create', 'twin_event', id, { source: input.source }),
   ]);
-  return { id, ...input, destinationPlaceId: input.destinationPlaceId ?? null, endAt: input.endAt ?? null, metadata: input.metadata ?? null };
+  return { id, ...input, originPlaceId: input.originPlaceId ?? null, endAt: input.endAt ?? null, schedule: input.schedule ?? null, createdAt };
 }

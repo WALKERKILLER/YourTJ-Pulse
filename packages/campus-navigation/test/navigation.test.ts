@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { calculateCampusRoutes, evaluateRouteProgress, nextRouteInstruction, ROUTE_PROFILE_RULES, searchCampusPlaces, type NavigationGraph, type NavigationPlace, type SearchIndex } from '../src';
+import { buildTwinMovementPlan, calculateCampusRoutes, deriveTwinBehavior, evaluateRouteProgress, nextRouteInstruction, projectTwinMovement, ROUTE_PROFILE_RULES, searchCampusPlaces, type NavigationGraph, type NavigationPlace, type SearchIndex } from '../src';
+import twinVectors from '../../contracts/generated/twin_projection_vectors.json';
 
 const graph: NavigationGraph = {
   version: 1,
@@ -54,5 +55,43 @@ describe('campus navigation', () => {
   it('ranks names, pinyin, aliases, categories, and descriptions', () => {
     const index: SearchIndex = { version: 1, campusId: 'test-campus', documents: [{ ...places[0]!, aliases: ['Southwest Dorm'], category: 'dormitory', description: '打印 充电', initials: 'xnyl', number: 'S1', pinyin: 'xi nan yi lou', searchText: '西南一楼 southwest dorm dormitory 打印 充电 xnyl s1 xi nan yi lou' }] };
     for (const query of ['西南', 'xinan', 'xnyl', 'S1', 'dormitory', '打印']) expect(searchCampusPlaces(index, query)[0]?.id).toBe('origin');
+  });
+
+  it('derives the same simulated position from a movement plan and timestamp', () => {
+    const [route] = calculateCampusRoutes(graph, places, { origin: { placeId: 'origin' }, destination: { placeId: 'destination' }, profile: 'walking' });
+    expect(route).toBeDefined();
+    if (!route) return;
+    const eventStartAt = Date.parse('2026-07-17T01:00:00.000Z');
+    const plan = buildTwinMovementPlan({
+      id: 'plan-1', userId: 'user-1', eventId: 'event-1', originPlaceId: 'origin', destinationPlaceId: 'destination',
+      eventStartAt, movementType: 'walk', route, routeVersion: graph.version, arrivalLeadTimeMs: 60_000,
+    });
+    const midpoint = projectTwinMovement(plan, graph, (plan.startedAt + plan.expectedArrivalAt) / 2);
+    expect(midpoint.kind).toBe('twin_simulated');
+    expect(midpoint.progress).toBe(0.5);
+    expect(midpoint.longitude).toBeCloseTo(0.001, 6);
+    expect(midpoint.latitude).toBeCloseTo(0, 6);
+    expect(deriveTwinBehavior(plan, { eventType: 'class', eventStartAt, eventEndAt: eventStartAt + 3_600_000 }, plan.startedAt - 1)).toBe('preparing');
+    expect(deriveTwinBehavior(plan, { eventType: 'class', eventStartAt, eventEndAt: eventStartAt + 3_600_000 }, plan.startedAt)).toBe('walking');
+    expect(deriveTwinBehavior(plan, { eventType: 'class', eventStartAt, eventEndAt: eventStartAt + 3_600_000 }, plan.expectedArrivalAt)).toBe('arrived');
+    expect(deriveTwinBehavior(plan, { eventType: 'class', eventStartAt, eventEndAt: eventStartAt + 3_600_000 }, eventStartAt)).toBe('in_class');
+  });
+
+  it('matches the generated cross-client twin projection vectors', () => {
+    const vectorGraph: NavigationGraph = {
+      version: twinVectors.version,
+      campusId: 'golden',
+      directed: true,
+      edges: [],
+      nodes: twinVectors.nodes.map((node) => ({ ...node, kind: 'path' as const })),
+    };
+    for (const expected of twinVectors.cases) {
+      const actual = projectTwinMovement({ ...twinVectors.plan, movementType: twinVectors.plan.movementType as 'walk' }, vectorGraph, expected.timestamp);
+      expect(actual).toMatchObject({ kind: 'twin_simulated', progress: expected.progress });
+      expect(actual.longitude).toBeCloseTo(expected.longitude, 8);
+      expect(actual.latitude).toBeCloseTo(expected.latitude, 8);
+      expect(actual.x).toBeCloseTo(expected.x, 8);
+      expect(actual.y).toBeCloseTo(expected.y, 8);
+    }
   });
 });

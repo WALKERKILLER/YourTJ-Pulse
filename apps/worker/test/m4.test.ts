@@ -10,6 +10,7 @@ import { createTestDatabase, type TestDatabase } from './sqlite-d1';
 const migrationPaths = [
   fileURLToPath(new URL('../migrations/0001_core.sql', import.meta.url)),
   fileURLToPath(new URL('../migrations/0002_map_collaboration.sql', import.meta.url)),
+  fileURLToPath(new URL('../migrations/0003_twin_simulation.sql', import.meta.url)),
 ];
 const ownerToken = 'owner-test-session-000000000000000001';
 const memberToken = 'member-test-session-00000000000000001';
@@ -53,10 +54,10 @@ describe('M4 D1 business API', () => {
 
   afterEach(() => database.close());
 
-  it('creates the nine constrained core tables without a GPS trajectory table', async () => {
+  it('creates constrained core tables without a GPS trajectory table', async () => {
     const result = await database.binding.prepare("SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name").all<{ name: string }>();
     const names = result.results.map((row) => row.name);
-    for (const name of ['users', 'rooms', 'room_members', 'pins', 'pin_comments', 'feature_revisions', 'twin_profiles', 'twin_events', 'audit_logs']) {
+    for (const name of ['users', 'rooms', 'room_members', 'pins', 'pin_comments', 'feature_revisions', 'twin_profiles', 'twin_events', 'twin_movement_plans', 'audit_logs']) {
       expect(names).toContain(name);
     }
     expect(names.some((name) => /gps|trajectory|location_history/.test(name))).toBe(false);
@@ -181,22 +182,22 @@ describe('M4 D1 business API', () => {
     expect(audit.results.map((row) => row.action)).toEqual(expect.arrayContaining(['pin.create', 'pin.update', 'pin.comment.create', 'pin.delete']));
   });
 
-  it('persists twin profiles and destination events while rejecting GPS fields', async () => {
+  it('persists opt-in twin profiles and bounded destination events', async () => {
     const profile = await request(database.binding, '/api/twin/profile', memberToken, {
-      method: 'PATCH', body: JSON.stringify({ enabled: true, homePlaceId: 'tongji-siping-way-1', privacyMode: 'private' }),
+      method: 'PATCH', body: JSON.stringify({ enabled: true, simulationEnabled: true, homePlaceId: 'tongji-siping-way-1465759871', privacyMode: 'private' }),
     });
-    expect(await data(profile)).toMatchObject({ enabled: true, privacyMode: 'private' });
+    expect(await data(profile)).toMatchObject({ enabled: true, simulationEnabled: true, privacyMode: 'private' });
     const event = await request(database.binding, '/api/twin/events', memberToken, {
-      method: 'POST', body: JSON.stringify({ eventType: 'class', destinationPlaceId: 'tongji-siping-way-1', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', metadata: { course: '高等数学' } }),
+      method: 'POST', body: JSON.stringify({ type: 'class', destinationPlaceId: 'tongji-siping-way-183383474', startAt: '2026-07-17T08:00:00.000Z', source: 'timetable', schedule: { courseName: '高等数学' } }),
     });
     expect(event.status).toBe(201);
     expect(await data(await request(database.binding, '/api/twin/events', memberToken))).toHaveLength(1);
     const gps = await request(database.binding, '/api/twin/events', memberToken, {
-      method: 'POST', body: JSON.stringify({ eventType: 'gps', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', longitude: 121.5, latitude: 31.28 }),
+      method: 'POST', body: JSON.stringify({ type: 'gps', destinationPlaceId: 'tongji-siping-way-183383474', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', longitude: 121.5, latitude: 31.28 }),
     });
     expect(gps.status).toBe(400);
     const nestedGps = await request(database.binding, '/api/twin/events', memberToken, {
-      method: 'POST', body: JSON.stringify({ eventType: 'class', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', metadata: { lastPosition: { coordinates: [121.5, 31.28] } } }),
+      method: 'POST', body: JSON.stringify({ type: 'class', destinationPlaceId: 'tongji-siping-way-183383474', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', schedule: { lastPosition: { coordinates: [121.5, 31.28] } } }),
     });
     expect(nestedGps.status).toBe(400);
   });

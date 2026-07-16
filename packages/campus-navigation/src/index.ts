@@ -100,6 +100,130 @@ export interface RouteProgress {
   offRoute: boolean;
 }
 
+export type TwinMovementType = 'walk' | 'run' | 'bike';
+export type TwinBehaviorState = 'idle' | 'preparing' | 'walking' | 'running' | 'cycling' | 'arrived' | 'in_class' | 'eating' | 'studying' | 'exercising' | 'returning_home' | 'sleeping';
+export type TwinEventType = 'class' | 'meal' | 'study' | 'exercise' | 'club' | 'custom';
+
+export interface TwinMovementPlanData {
+  destinationPlaceId: string;
+  eventId: string;
+  expectedArrivalAt: number;
+  id: string;
+  movementType: TwinMovementType;
+  originPlaceId: string;
+  pathNodeIds: string[];
+  routeVersion: number;
+  speedMetersPerSecond: number;
+  startedAt: number;
+  userId: string;
+}
+
+export interface TwinProjection extends NavigationCoordinate {
+  headingDegrees: number;
+  kind: 'twin_simulated';
+  progress: number;
+  x: number;
+  y: number;
+}
+
+export interface BuildTwinMovementPlanInput {
+  arrivalLeadTimeMs?: number;
+  destinationPlaceId: string;
+  eventId: string;
+  eventStartAt: string | number;
+  id: string;
+  movementType: TwinMovementType;
+  originPlaceId: string;
+  route: CampusRoute;
+  routeVersion: number;
+  userId: string;
+}
+
+export const TWIN_SPEED_METERS_PER_SECOND: Readonly<Record<TwinMovementType, number>> = {
+  walk: 1.35,
+  run: 2.8,
+  bike: 4.5,
+};
+
+export function buildTwinMovementPlan(input: BuildTwinMovementPlanInput): TwinMovementPlanData {
+  const eventStartAt = typeof input.eventStartAt === 'number' ? input.eventStartAt : Date.parse(input.eventStartAt);
+  if (!Number.isFinite(eventStartAt)) throw new Error('INVALID_TWIN_EVENT_START');
+  if (input.route.nodeIds.length < 2 || input.route.distanceMeters <= 0) throw new Error('INVALID_TWIN_ROUTE');
+  const speedMetersPerSecond = TWIN_SPEED_METERS_PER_SECOND[input.movementType];
+  const expectedArrivalAt = Math.max(1, Math.floor(eventStartAt - (input.arrivalLeadTimeMs ?? 5 * 60_000)));
+  const travelTimeMs = Math.max(1, Math.ceil(input.route.distanceMeters / speedMetersPerSecond * 1_000));
+  return {
+    id: input.id,
+    userId: input.userId,
+    eventId: input.eventId,
+    originPlaceId: input.originPlaceId,
+    destinationPlaceId: input.destinationPlaceId,
+    pathNodeIds: [...input.route.nodeIds],
+    startedAt: Math.max(0, expectedArrivalAt - travelTimeMs),
+    expectedArrivalAt,
+    speedMetersPerSecond,
+    movementType: input.movementType,
+    routeVersion: input.routeVersion,
+  };
+}
+
+export function projectTwinMovement(plan: TwinMovementPlanData, graph: NavigationGraph, timestamp: number): TwinProjection {
+  const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
+  const nodes = plan.pathNodeIds.map((nodeId) => nodesById.get(nodeId));
+  if (nodes.some((node) => !node) || nodes.length < 2) throw new Error('INVALID_TWIN_PLAN_PATH');
+  const routeNodes = nodes as NavigationNode[];
+  const progress = Math.max(0, Math.min(1, (timestamp - plan.startedAt) / (plan.expectedArrivalAt - plan.startedAt)));
+  const distances = routeNodes.slice(1).map((node, index) => coordinateDistanceMeters(routeNodes[index]!, node));
+  const totalDistance = distances.reduce((sum, distance) => sum + distance, 0);
+  let remaining = totalDistance * progress;
+  let segmentIndex = 0;
+  for (; segmentIndex < distances.length - 1 && remaining > distances[segmentIndex]!; segmentIndex += 1) {
+    remaining -= distances[segmentIndex]!;
+  }
+  const start = routeNodes[segmentIndex]!;
+  const end = routeNodes[Math.min(segmentIndex + 1, routeNodes.length - 1)]!;
+  const segmentDistance = distances[segmentIndex] ?? 0;
+  const segmentProgress = segmentDistance > 0 ? Math.max(0, Math.min(1, remaining / segmentDistance)) : 0;
+  const interpolate = (left: number, right: number) => left + (right - left) * segmentProgress;
+  return {
+    kind: 'twin_simulated',
+    longitude: interpolate(start.longitude, end.longitude),
+    latitude: interpolate(start.latitude, end.latitude),
+    x: interpolate(start.x, end.x),
+    y: interpolate(start.y, end.y),
+    headingDegrees: (Math.atan2(end.x - start.x, end.y - start.y) * 180 / Math.PI + 360) % 360,
+    progress,
+  };
+}
+
+export interface TwinBehaviorContext {
+  eventEndAt?: string | number | null;
+  eventStartAt: string | number;
+  eventType: TwinEventType;
+  preparingDurationMs?: number;
+  returningHome?: boolean;
+  sleeping?: boolean;
+}
+
+export function deriveTwinBehavior(plan: TwinMovementPlanData, context: TwinBehaviorContext, timestamp: number): TwinBehaviorState {
+  const eventStartAt = typeof context.eventStartAt === 'number' ? context.eventStartAt : Date.parse(context.eventStartAt);
+  const eventEndAt = context.eventEndAt == null
+    ? eventStartAt
+    : typeof context.eventEndAt === 'number' ? context.eventEndAt : Date.parse(context.eventEndAt);
+  if (context.sleeping && timestamp >= eventEndAt) return 'sleeping';
+  if (timestamp < plan.startedAt - (context.preparingDurationMs ?? 5 * 60_000)) return 'idle';
+  if (timestamp < plan.startedAt) return 'preparing';
+  if (timestamp < plan.expectedArrivalAt) {
+    if (context.returningHome) return 'returning_home';
+    return { walk: 'walking', run: 'running', bike: 'cycling' }[plan.movementType] as TwinBehaviorState;
+  }
+  if (timestamp < eventStartAt) return 'arrived';
+  if (timestamp <= eventEndAt) {
+    return { class: 'in_class', meal: 'eating', study: 'studying', exercise: 'exercising', club: 'arrived', custom: 'arrived' }[context.eventType] as TwinBehaviorState;
+  }
+  return 'idle';
+}
+
 export const ROUTE_PROFILE_RULES = routeProfileRules;
 
 const ROUGH_SURFACES = new Set<string>(ROUTE_PROFILE_RULES.roughSurfaces);
