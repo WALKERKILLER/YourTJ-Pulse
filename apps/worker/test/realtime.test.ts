@@ -154,6 +154,19 @@ describe('RoomDurableObject realtime semantics', () => {
     expect(JSON.stringify([...state.values.values()])).not.toContain('121.501');
   });
 
+  it('rejects simulated coordinates on the GPS sharing channel', async () => {
+    await room.webSocketMessage(alice as unknown as WebSocket, clientMessage('presence.update', 'share-a', {
+      status: 'available', sharingLocation: true,
+    }));
+    alice.messages.length = 0;
+    bob.messages.length = 0;
+    await room.webSocketMessage(alice as unknown as WebSocket, clientMessage('location.update', 'simulated-location', {
+      seq: 1, longitude: 121.5, latitude: 31.28, accuracy: 1, kind: 'twin_simulated',
+    }));
+    expect(alice.messages.at(-1)).toMatchObject({ type: 'room.error', payload: { code: 'LOCATION_KIND_NOT_ALLOWED' } });
+    expect(bob.messages.some((message) => message.type === 'member.location')).toBe(false);
+  });
+
   it('stops sharing immediately and emits member.left after the disconnect grace alarm', async () => {
     await room.webSocketMessage(alice as unknown as WebSocket, clientMessage('presence.update', 'pause-a', {
       status: 'away', sharingLocation: false,

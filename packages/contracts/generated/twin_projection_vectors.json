@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "nodes": [
+    {
+      "id": "a",
+      "longitude": 121.5,
+      "latitude": 31.28,
+      "x": 0,
+      "y": 0
+    },
+    {
+      "id": "b",
+      "longitude": 121.501,
+      "latitude": 31.28,
+      "x": 100,
+      "y": 0
+    }
+  ],
+  "plan": {
+    "id": "golden-plan",
+    "userId": "golden-user",
+    "eventId": "golden-event",
+    "originPlaceId": "origin",
+    "destinationPlaceId": "destination",
+    "pathNodeIds": [
+      "a",
+      "b"
+    ],
+    "startedAt": 1000,
+    "expectedArrivalAt": 3000,
+    "speedMetersPerSecond": 1.35,
+    "movementType": "walk",
+    "routeVersion": 1
+  },
+  "cases": [
+    {
+      "timestamp": 1000,
+      "longitude": 121.5,
+      "latitude": 31.28,
+      "x": 0,
+      "y": 0,
+      "progress": 0
+    },
+    {
+      "timestamp": 2000,
+      "longitude": 121.5005,
+      "latitude": 31.28,
+      "x": 50,
+      "y": 0,
+      "progress": 0.5
+    },
+    {
+      "timestamp": 3000,
+      "longitude": 121.501,
+      "latitude": 31.28,
+      "x": 100,
+      "y": 0,
+      "progress": 1
+    }
+  ]
+}

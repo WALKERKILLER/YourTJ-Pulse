@@ -11,8 +11,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
-    "protocol:check": "tsx scripts/generate-realtime.ts --check",
-    "protocol:generate": "tsx scripts/generate-realtime.ts",
+    "protocol:check": "tsx scripts/generate-realtime.ts --check && tsx scripts/generate-twin.ts --check",
+    "protocol:generate": "tsx scripts/generate-realtime.ts && tsx scripts/generate-twin.ts",
     "test": "vitest run",
     "lint": "eslint src test scripts",
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -257,6 +257,9 @@ export class RoomDurableObject {
         return;
       }
       case 'location.update': {
+        if (message.payload.kind !== 'gps') {
+          throw new ApiError(400, 'LOCATION_KIND_NOT_ALLOWED', 'Realtime location sharing accepts GPS samples only');
+        }
         if (!current.sharingLocation) {
           this.sendAck(ws, message, 'ignored');
           return;

@@ -73,15 +73,15 @@ describe('submitFeatureSchema', () => {
 });
 
 describe('createTwinEventSchema', () => {
-  it('accepts destination events without retaining GPS samples', () => {
+  it('accepts bounded schedule events without retaining arbitrary location samples', () => {
     expect(createTwinEventSchema.safeParse({
-      eventType: 'class', destinationPlaceId: 'place-1', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', metadata: { course: '高等数学' },
+      type: 'class', destinationPlaceId: 'place-1', startAt: '2026-07-17T08:00:00.000Z', source: 'timetable', schedule: { courseName: '高等数学', roomName: 'A101', weeks: [1, 2] },
     }).success).toBe(true);
     expect(createTwinEventSchema.safeParse({
-      eventType: 'location', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', metadata: { latitude: 31.28 },
+      type: 'location', destinationPlaceId: 'place-1', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', latitude: 31.28,
     }).success).toBe(false);
     expect(createTwinEventSchema.safeParse({
-      eventType: 'class', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', metadata: { nested: { coordinates: [121.5, 31.28] } },
+      type: 'class', startAt: '2026-07-17T08:00:00.000Z', source: 'manual', schedule: { coordinates: [121.5, 31.28] },
     }).success).toBe(false);
   });
 });
