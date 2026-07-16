@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-import { createPinSchema, pinStatusSchema, pinTypeSchema, pinVisibilitySchema } from './business';
+import { createPinSchema, pinStatusSchema, pinTypeSchema, pinVisibilitySchema, updatePinSchema } from './business';
 import { API_LIMITS } from './limits';
 
 export const locationKindSchema = z.enum([
@@ -55,6 +55,22 @@ export const pinCreateMessageSchema = clientEnvelopeSchema.extend({
   payload: z.object({ pin: createPinSchema }).strict(),
 }).strict();
 
+export const pinUpdateMessageSchema = clientEnvelopeSchema.extend({
+  type: z.literal('pin.update'),
+  payload: z.object({
+    pinId: z.string().min(1).max(128),
+    update: updatePinSchema,
+  }).strict(),
+}).strict();
+
+export const pinDeleteMessageSchema = clientEnvelopeSchema.extend({
+  type: z.literal('pin.delete'),
+  payload: z.object({
+    pinId: z.string().min(1).max(128),
+    expectedVersion: z.number().int().positive(),
+  }).strict(),
+}).strict();
+
 export const pingMessageSchema = clientEnvelopeSchema.extend({
   type: z.literal('ping'),
   payload: z.object({ lastSequence: z.number().int().nonnegative().optional() }).strict(),
@@ -65,6 +81,8 @@ export const clientMessageSchema = z.discriminatedUnion('type', [
   locationUpdateSchema,
   presenceUpdateMessageSchema,
   pinCreateMessageSchema,
+  pinUpdateMessageSchema,
+  pinDeleteMessageSchema,
   pingMessageSchema,
 ]);
 
@@ -151,6 +169,15 @@ export const pinUpdatedMessageSchema = serverEnvelopeSchema.extend({
   payload: z.object({ pin: realtimePinSchema }).strict(),
 }).strict();
 
+export const pinDeletedMessageSchema = serverEnvelopeSchema.extend({
+  type: z.literal('pin.deleted'),
+  payload: z.object({
+    pinId: z.string().min(1).max(128),
+    version: z.number().int().positive(),
+    deletedAt: z.iso.datetime(),
+  }).strict(),
+}).strict();
+
 export const roomErrorMessageSchema = serverEnvelopeSchema.extend({
   type: z.literal('room.error'),
   payload: z.object({
@@ -164,7 +191,7 @@ export const roomAckMessageSchema = serverEnvelopeSchema.extend({
   type: z.literal('room.ack'),
   requestId: z.string().min(1).max(100),
   payload: z.object({
-    acceptedType: z.enum(['room.join', 'location.update', 'presence.update', 'pin.create', 'ping']),
+    acceptedType: z.enum(['room.join', 'location.update', 'presence.update', 'pin.create', 'pin.update', 'pin.delete', 'ping']),
     status: z.enum(['accepted', 'duplicate', 'ignored']),
   }).strict(),
 }).strict();
@@ -177,6 +204,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   memberPresenceMessageSchema,
   pinCreatedMessageSchema,
   pinUpdatedMessageSchema,
+  pinDeletedMessageSchema,
   roomErrorMessageSchema,
   roomAckMessageSchema,
 ]);
@@ -197,6 +225,8 @@ export type JoinRoomMessage = z.infer<typeof joinRoomMessageSchema>;
 export type LocationUpdate = z.infer<typeof locationUpdateSchema>;
 export type PresenceUpdateMessage = z.infer<typeof presenceUpdateMessageSchema>;
 export type PinCreateMessage = z.infer<typeof pinCreateMessageSchema>;
+export type PinUpdateMessage = z.infer<typeof pinUpdateMessageSchema>;
+export type PinDeleteMessage = z.infer<typeof pinDeleteMessageSchema>;
 export type PingMessage = z.infer<typeof pingMessageSchema>;
 export type ClientMessage = z.infer<typeof clientMessageSchema>;
 export type RealtimeMember = z.infer<typeof realtimeMemberSchema>;

@@ -12,7 +12,7 @@ import {
 } from '@yourtj/contracts';
 import { z } from 'zod';
 
-import { createPin } from '../repositories/business';
+import { createPin, deletePin, getPin, updatePin } from '../repositories/business';
 import type { PinRecord } from '../repositories/business';
 import type { WorkerBindings } from '../types';
 import { ApiError } from '../utils/responses';
@@ -53,8 +53,10 @@ interface Departure {
   userId: string;
 }
 
-interface StoredPinRequest {
+interface StoredPinMutation {
+  deleted?: { deletedAt: string; pinId: string; version: number };
   expiresAt: number;
+  eventType?: 'pin.created' | 'pin.updated' | 'pin.deleted';
   pin?: PinRecord;
   status: 'complete' | 'processing';
 }
@@ -289,22 +291,90 @@ export class RoomDurableObject {
       }
       case 'pin.create': {
         const requestKey = `request:${message.requestId}`;
-        const stored = await this.state.storage.get<StoredPinRequest>(requestKey);
+        const stored = await this.state.storage.get<StoredPinMutation>(requestKey);
         if (stored && stored.expiresAt > timestamp) {
           if (stored.status === 'processing') throw new ApiError(409, 'REQUEST_IN_PROGRESS', 'Pin request is still being processed');
-          if (stored.pin) this.send(ws, 'pin.created', { pin: stored.pin }, message.requestId);
+          if (stored.pin && (stored.eventType === 'pin.created' || stored.eventType === 'pin.updated')) {
+            this.send(ws, stored.eventType, { pin: stored.pin }, message.requestId);
+          }
           this.sendAck(ws, message, 'duplicate');
           return;
         }
-        await this.state.storage.put(requestKey, { status: 'processing', expiresAt: timestamp + 86_400_000 } satisfies StoredPinRequest);
+        await this.state.storage.put(requestKey, { status: 'processing', expiresAt: timestamp + 86_400_000 } satisfies StoredPinMutation);
         try {
           const pin = await createPin(this.env.DB, current.user, {
             ...message.payload.pin,
             roomId: current.roomId,
             visibility: 'room',
           });
-          await this.state.storage.put(requestKey, { status: 'complete', pin, expiresAt: timestamp + 86_400_000 } satisfies StoredPinRequest);
+          await this.state.storage.put(requestKey, {
+            status: 'complete', eventType: 'pin.created', pin, expiresAt: timestamp + 86_400_000,
+          } satisfies StoredPinMutation);
           this.broadcast('pin.created', { pin }, message.requestId);
+          this.sendAck(ws, message, 'accepted');
+        } catch (error) {
+          await this.state.storage.delete(requestKey);
+          throw error;
+        }
+        return;
+      }
+      case 'pin.update': {
+        const requestKey = `request:${message.requestId}`;
+        const stored = await this.state.storage.get<StoredPinMutation>(requestKey);
+        if (stored && stored.expiresAt > timestamp) {
+          if (stored.status === 'processing') throw new ApiError(409, 'REQUEST_IN_PROGRESS', 'Pin request is still being processed');
+          if (stored.pin && (stored.eventType === 'pin.created' || stored.eventType === 'pin.updated')) {
+            this.send(ws, stored.eventType, { pin: stored.pin }, message.requestId);
+          }
+          this.sendAck(ws, message, 'duplicate');
+          return;
+        }
+        const currentPin = await getPin(this.env.DB, message.payload.pinId, current.user);
+        if (currentPin.roomId !== current.roomId || currentPin.visibility !== 'room') {
+          throw new ApiError(403, 'PIN_ROOM_MISMATCH', 'Realtime edits are limited to room-visible pins in this room');
+        }
+        if (message.payload.update.visibility && message.payload.update.visibility !== 'room') {
+          throw new ApiError(400, 'PIN_VISIBILITY_LOCKED', 'Realtime room edits cannot change pin visibility');
+        }
+        await this.state.storage.put(requestKey, { status: 'processing', expiresAt: timestamp + 86_400_000 } satisfies StoredPinMutation);
+        try {
+          const pin = await updatePin(this.env.DB, message.payload.pinId, current.user, message.payload.update);
+          await this.state.storage.put(requestKey, {
+            status: 'complete', eventType: 'pin.updated', pin, expiresAt: timestamp + 86_400_000,
+          } satisfies StoredPinMutation);
+          this.broadcast('pin.updated', { pin }, message.requestId);
+          this.sendAck(ws, message, 'accepted');
+        } catch (error) {
+          await this.state.storage.delete(requestKey);
+          throw error;
+        }
+        return;
+      }
+      case 'pin.delete': {
+        const requestKey = `request:${message.requestId}`;
+        const stored = await this.state.storage.get<StoredPinMutation>(requestKey);
+        if (stored && stored.expiresAt > timestamp) {
+          if (stored.status === 'processing') throw new ApiError(409, 'REQUEST_IN_PROGRESS', 'Pin request is still being processed');
+          if (stored.deleted) this.send(ws, 'pin.deleted', stored.deleted, message.requestId);
+          this.sendAck(ws, message, 'duplicate');
+          return;
+        }
+        const currentPin = await getPin(this.env.DB, message.payload.pinId, current.user);
+        if (currentPin.roomId !== current.roomId || currentPin.visibility !== 'room') {
+          throw new ApiError(403, 'PIN_ROOM_MISMATCH', 'Realtime deletes are limited to room-visible pins in this room');
+        }
+        await this.state.storage.put(requestKey, { status: 'processing', expiresAt: timestamp + 86_400_000 } satisfies StoredPinMutation);
+        try {
+          const deleted = await deletePin(
+            this.env.DB,
+            message.payload.pinId,
+            current.user,
+            message.payload.expectedVersion,
+          );
+          await this.state.storage.put(requestKey, {
+            status: 'complete', eventType: 'pin.deleted', deleted, expiresAt: timestamp + 86_400_000,
+          } satisfies StoredPinMutation);
+          this.broadcast('pin.deleted', deleted, message.requestId);
           this.sendAck(ws, message, 'accepted');
         } catch (error) {
           await this.state.storage.delete(requestKey);

@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 
 import { placesRouter } from './routes/places';
+import { featureRevisionsRouter } from './routes/feature-revisions';
 import { pinsRouter } from './routes/pins';
 import { realtimeRouter } from './routes/realtime';
 import { roomsRouter } from './routes/rooms';
@@ -23,6 +24,7 @@ export function createApp() {
   apiRouter.route('/', placesRouter);
   apiRouter.route('/', sessionRouter);
   apiRouter.route('/', submissionsRouter);
+  apiRouter.route('/feature-revisions', featureRevisionsRouter);
   apiRouter.route('/rooms', roomsRouter);
   apiRouter.route('/pins', pinsRouter);
   apiRouter.route('/realtime', realtimeRouter);

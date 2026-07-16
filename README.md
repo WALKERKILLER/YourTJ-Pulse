@@ -4,7 +4,7 @@
 
 YourTJ Pulse 是面向同济大学的实时协作地图与数字校园分身平台。项目从原 YTJ-Map 演进而来：基础地图继续使用 OpenStreetMap、MapLibre 与 PMTiles，应用层逐步扩展地点搜索、校园导航、多人房间和 PulseTown 数字校园模式。
 
-当前已完成工程与安全基线、React 校园地图、搜索导航、D1 业务 API 与多人实时房间。旧地图、编辑器和审核页仍通过 `/legacy-map`、`/legacy-editor`、`/legacy-admin` 保留，后续地图协作、PulseTown 与 Flutter 客户端按 `map-plan.md` 分阶段接入。
+当前已完成工程与安全基线、React 校园地图、搜索导航、D1 业务 API、多人实时房间与可审计地图协作。旧地图、编辑器和审核页仍通过 `/legacy-map`、`/legacy-editor`、`/legacy-admin` 保留，后续 PulseTown 与 Flutter 客户端按 `map-plan.md` 分阶段接入。
 
 ## 产品模式
 
@@ -99,6 +99,10 @@ pnpm data:validate
 | `/api/pins` | GET、POST | 查询或创建可见协作点 |
 | `/api/pins/:id` | GET、PATCH、DELETE | 协作点详情、版本化更新或删除 |
 | `/api/pins/:id/comments` | GET、POST | 协作点评论 |
+| `/api/pins/:id/reports` | GET、POST | 管理员查询或成员提交协作点举报 |
+| `/api/pins/:id/reports/:reportId` | PATCH | 管理员处理待审核举报 |
+| `/api/pins/:id/activity` | GET | 查询协作点操作记录 |
+| `/api/feature-revisions` | GET | 查询本人或管理员可见的正式地图修订记录 |
 | `/api/twin/profile` | GET、PATCH | 当前用户的 Twin 配置 |
 | `/api/twin/events` | GET、POST | 目的地/日程事件；不接收 GPS 轨迹 |
 | `/api/submit` | POST | 提交编辑（feature → 待审核） |
@@ -113,10 +117,10 @@ pnpm data:validate
 
 ## 编辑与审核流程
 
-1. 用户在旧编辑器中提交经过共享 Schema 校验的 GeoJSON Feature。
-2. Worker 将提交写入 R2 审核队列；非法坐标、超量要素和超大请求会在写入前拒绝。
+1. 用户在编辑器中提交经过共享 Schema 校验的 GeoJSON Feature；临时协作 Pin 不会直接进入正式地图。
+2. Worker 将提交写入 R2 审核队列；已认证提交同时建立 D1 Feature Revision，非法坐标、超量要素和超大请求会在写入前拒绝。
 3. 审核员使用 Bearer Token 访问管理 API；未登录返回 401，角色不足返回 403。
-4. 应用或拒绝结果会记录审核者、审核时间、可选说明和 D1 审计日志。
+4. 应用或拒绝结果会同步更新 Feature Revision，并记录审核者、审核时间、可选说明和 D1 审计日志。
 
 ## 安全与隐私
 

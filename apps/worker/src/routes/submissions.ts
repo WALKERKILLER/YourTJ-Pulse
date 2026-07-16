@@ -6,7 +6,11 @@ import { z } from 'zod';
 import { authenticate } from '../auth/middleware';
 import { requireRole } from '../auth/roles';
 import { authenticateToken, bearerToken } from '../auth/session';
-import { claimSubmissionReview, releaseSubmissionReview } from '../repositories/business';
+import { claimSubmissionReview, releaseSubmissionReview, syncAuthenticatedUser } from '../repositories/business';
+import {
+  finalizeSubmissionFeatureRevisions,
+  recordSubmissionFeatureRevisions,
+} from '../repositories/feature-revisions';
 import {
   createSubmission,
   getSubmission,
@@ -48,6 +52,10 @@ submissionsRouter.post('/submit', async (context) => {
   const actor = token ? authenticateToken(token, context.env) : undefined;
   if (token && !actor) throw new ApiError(401, 'INVALID_ACCESS_TOKEN', 'Access token is invalid or expired');
   const submission = await createSubmission(context.env.TILES, input, actor?.id);
+  if (actor) {
+    await syncAuthenticatedUser(context.env.DB, actor);
+    await recordSubmissionFeatureRevisions(context.env.DB, actor, submission.id, submission.features);
+  }
   return context.json({ ok: true, id: submission.id, count: submission.count });
 });
 
@@ -73,7 +81,9 @@ async function reviewWithAudit(
   const reviewer = context.get('user');
   await claimSubmissionReview(context.env.DB, reviewer.id, id, action);
   try {
-    return await reviewSubmission(context.env.TILES, id, action, reviewer, message, features);
+    const result = await reviewSubmission(context.env.TILES, id, action, reviewer, message, features);
+    await finalizeSubmissionFeatureRevisions(context.env.DB, id, reviewer, action, message);
+    return result;
   } catch (error) {
     try {
       await releaseSubmissionReview(context.env.DB, id);

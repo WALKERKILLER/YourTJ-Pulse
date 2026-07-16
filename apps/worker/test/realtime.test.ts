@@ -5,11 +5,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createApp } from '../src';
 import { RoomDurableObject } from '../src/durable-objects/room';
-import { createRoom, syncAuthenticatedUser } from '../src/repositories/business';
+import { createRoom, joinRoom, syncAuthenticatedUser } from '../src/repositories/business';
 import type { WorkerBindings } from '../src/types';
 import { createTestDatabase } from './sqlite-d1';
 
-const migrationPath = fileURLToPath(new URL('../migrations/0001_core.sql', import.meta.url));
+const migrationPaths = [
+  fileURLToPath(new URL('../migrations/0001_core.sql', import.meta.url)),
+  fileURLToPath(new URL('../migrations/0002_map_collaboration.sql', import.meta.url)),
+];
+
+async function migrations() {
+  return (await Promise.all(migrationPaths.map((path) => readFile(path, 'utf8')))).join('\n');
+}
 
 interface TestAttachment {
   displayName: string;
@@ -180,7 +187,7 @@ describe('RoomDurableObject realtime semantics', () => {
 
 describe('realtime WebSocket upgrade route', () => {
   it('authenticates membership and forwards only trusted identity to the room namespace', async () => {
-    const database = createTestDatabase(await readFile(migrationPath, 'utf8'));
+    const database = createTestDatabase(await migrations());
     try {
       const owner: AuthenticatedUser = { id: 'route-owner', displayName: 'Route Owner', roles: ['user'] };
       await syncAuthenticatedUser(database.binding, owner);
@@ -219,7 +226,7 @@ describe('realtime WebSocket upgrade route', () => {
   });
 
   it('deduplicates pin creation across a reconnected socket', async () => {
-    const database = createTestDatabase(await readFile(migrationPath, 'utf8'));
+    const database = createTestDatabase(await migrations());
     try {
       const owner: AuthenticatedUser = { id: 'pin-owner', displayName: 'Pin Owner', roles: ['user'] };
       await syncAuthenticatedUser(database.binding, owner);
@@ -231,7 +238,7 @@ describe('realtime WebSocket upgrade route', () => {
       state.sockets.push(first);
       await room.webSocketMessage(first as unknown as WebSocket, clientMessage('room.join', 'join-first', {}));
       const pinMessage = clientMessage('pin.create', 'stable-pin-request', {
-        pin: { type: 'meetup', title: '同一个集合点', longitude: 121.5, latitude: 31.28 },
+        pin: { type: 'meeting', title: '同一个集合点', longitude: 121.5, latitude: 31.28 },
       });
       await room.webSocketMessage(first as unknown as WebSocket, pinMessage);
       state.remove(first);
@@ -247,6 +254,62 @@ describe('realtime WebSocket upgrade route', () => {
       expect(reconnected.messages.some((message) => message.type === 'pin.created')).toBe(true);
       const acknowledgement = reconnected.messages.find((message) => message.type === 'room.ack');
       expect((acknowledgement?.payload as Record<string, unknown>).status).toBe('duplicate');
+    } finally {
+      database.close();
+    }
+  });
+
+  it('broadcasts room-member pin edits and rejects a stale expectedVersion', async () => {
+    const database = createTestDatabase(await migrations());
+    try {
+      const owner: AuthenticatedUser = { id: 'edit-owner', displayName: 'Edit Owner', roles: ['user'] };
+      const member: AuthenticatedUser = { id: 'edit-member', displayName: 'Edit Member', roles: ['user'] };
+      await syncAuthenticatedUser(database.binding, owner);
+      await syncAuthenticatedUser(database.binding, member);
+      const roomRecord = await createRoom(database.binding, owner, { name: '多人编辑房间', visibility: 'public' });
+      await joinRoom(database.binding, roomRecord.id, member);
+      const state = new TestState();
+      const room = new RoomDurableObject(state as unknown as DurableObjectState, { DB: database.binding } as WorkerBindings);
+      const ownerSocket = new TestSocket(owner.id);
+      ownerSocket.attachment.roomId = roomRecord.id;
+      ownerSocket.attachment.user = { ...owner, roles: ['user'] };
+      const memberSocket = new TestSocket(member.id);
+      memberSocket.attachment.roomId = roomRecord.id;
+      memberSocket.attachment.user = { ...member, roles: ['user'] };
+      state.sockets.push(ownerSocket, memberSocket);
+      await room.webSocketMessage(ownerSocket as unknown as WebSocket, clientMessage('room.join', 'edit-owner-join', {}));
+      await room.webSocketMessage(memberSocket as unknown as WebSocket, clientMessage('room.join', 'edit-member-join', {}));
+
+      await room.webSocketMessage(ownerSocket as unknown as WebSocket, clientMessage('pin.create', 'edit-create', {
+        pin: { type: 'meeting', title: '原集合点', longitude: 121.5, latitude: 31.28 },
+      }));
+      const createdEvent = memberSocket.messages.find((message) => message.type === 'pin.created');
+      const createdPin = (createdEvent?.payload as { pin: { id: string } }).pin;
+      ownerSocket.messages.length = 0;
+      memberSocket.messages.length = 0;
+
+      await room.webSocketMessage(memberSocket as unknown as WebSocket, clientMessage('pin.update', 'edit-update', {
+        pinId: createdPin.id, update: { expectedVersion: 1, title: '成员修改后的集合点' },
+      }));
+      const update = ownerSocket.messages.find((message) => message.type === 'pin.updated');
+      expect(update?.payload).toMatchObject({ pin: { title: '成员修改后的集合点', version: 2 } });
+
+      await room.webSocketMessage(ownerSocket as unknown as WebSocket, clientMessage('pin.update', 'edit-stale', {
+        pinId: createdPin.id, update: { expectedVersion: 1, title: '陈旧覆盖' },
+      }));
+      expect(ownerSocket.messages.at(-1)).toMatchObject({
+        type: 'room.error', payload: { code: 'PIN_VERSION_CONFLICT', retryable: false },
+      });
+      memberSocket.messages.length = 0;
+      await room.webSocketMessage(ownerSocket as unknown as WebSocket, clientMessage('pin.delete', 'edit-delete', {
+        pinId: createdPin.id, expectedVersion: 2,
+      }));
+      expect(memberSocket.messages.at(-1)).toMatchObject({
+        type: 'pin.deleted', payload: { pinId: createdPin.id, version: 3 },
+      });
+      expect(await database.binding.prepare('SELECT title, status, version FROM pins WHERE id = ?').bind(createdPin.id).first()).toEqual({
+        title: '成员修改后的集合点', status: 'deleted', version: 3,
+      });
     } finally {
       database.close();
     }

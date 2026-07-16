@@ -130,6 +130,13 @@ describe('RoomRealtimeClient and member store', () => {
       type: 'room.snapshot', sequence: 1, requestId: join.requestId, payload: { roomId: 'room-1', members: [] },
     }));
     expect(socket!.sent.some((encoded) => JSON.parse(encoded).type === 'location.update')).toBe(true);
+    client.createPin({
+      roomId: 'room-1', type: 'meeting', title: '集合点', longitude: 121.5, latitude: 31.28,
+      status: 'active', visibility: 'room',
+    });
+    client.updatePin('pin-1', { expectedVersion: 1, title: '新集合点' });
+    client.deletePin('pin-1', 2);
+    expect(socket!.sent.map((encoded) => JSON.parse(encoded).type)).toEqual(expect.arrayContaining(['pin.create', 'pin.update', 'pin.delete']));
     expect(messages).toHaveLength(1);
     client.stop();
   });
@@ -155,6 +162,36 @@ describe('RoomRealtimeClient and member store', () => {
       payload: { userId: 'alice', receivedAt: 30, location: { seq: 3, longitude: 122, latitude: 32, accuracy: 9, kind: 'gps' } },
     }));
     expect(useRealtimeStore.getState().members.alice?.location?.longitude).toBe(smoothed?.longitude);
+  });
+
+  it('merges REST pins with realtime versions and exposes version conflicts', () => {
+    const store = useRealtimeStore.getState();
+    const pin = {
+      id: 'pin-1', roomId: 'room-1', creatorId: 'alice', type: 'meeting' as const, title: '初始集合点',
+      description: null, longitude: 121.5, latitude: 31.28, status: 'active' as const,
+      visibility: 'room' as const, version: 1, expiresAt: null,
+      createdAt: '2026-07-17T00:00:00.000Z', updatedAt: '2026-07-17T00:00:00.000Z',
+    };
+    store.setPins([pin]);
+    store.applyMessage(serverMessage({
+      type: 'pin.updated', sequence: 1, requestId: 'update-1',
+      payload: { pin: { ...pin, title: '实时新版本', version: 2 } },
+    }));
+    useRealtimeStore.getState().setPins([pin]);
+    expect(useRealtimeStore.getState().pins['pin-1']).toMatchObject({ title: '实时新版本', version: 2 });
+
+    useRealtimeStore.getState().applyMessage(serverMessage({
+      type: 'room.error', sequence: 2, requestId: 'update-stale',
+      payload: { code: 'PIN_VERSION_CONFLICT', message: 'Pin was updated by another client', retryable: false },
+    }));
+    expect(useRealtimeStore.getState()).toMatchObject({
+      errorCode: 'PIN_VERSION_CONFLICT', errorRequestId: 'update-stale',
+    });
+    useRealtimeStore.getState().applyMessage(serverMessage({
+      type: 'pin.deleted', sequence: 3, requestId: 'delete-1',
+      payload: { pinId: 'pin-1', version: 3, deletedAt: '2026-07-17T00:10:00.000Z' },
+    }));
+    expect(useRealtimeStore.getState().pins['pin-1']).toBeUndefined();
   });
 
   it('requests refreshed credentials before reconnecting after close code 4001', async () => {

@@ -106,16 +106,21 @@ export async function getSubmission(bucket: R2Bucket, id: string) {
   return readJson<Submission>(bucket, submissionKey(id));
 }
 
+function featureKeys(features: GeoJsonFeature[]) {
+  const occurrences = new Map<string, number>();
+  return features.map((feature) => {
+    if (feature.id !== undefined) return { feature, key: `id:${String(feature.id)}` };
+    const content = JSON.stringify(feature);
+    const occurrence = occurrences.get(content) ?? 0;
+    occurrences.set(content, occurrence + 1);
+    return { feature, key: `content:${content}:${occurrence}` };
+  });
+}
+
 function mergeFeatures(master: GeoJsonFeature[], submitted: GeoJsonFeature[]) {
   const result = new Map<string, GeoJsonFeature>();
-  master.forEach((feature, index) => {
-    const key = feature.id === undefined ? `master:${index}` : `id:${String(feature.id)}`;
-    result.set(key, feature);
-  });
-  submitted.forEach((feature, index) => {
-    const key = feature.id === undefined ? `submission:${index}:${crypto.randomUUID()}` : `id:${String(feature.id)}`;
-    result.set(key, feature);
-  });
+  for (const { feature, key } of featureKeys(master)) result.set(key, feature);
+  for (const { feature, key } of featureKeys(submitted)) result.set(key, feature);
   return [...result.values()];
 }
 
@@ -136,6 +141,15 @@ export async function reviewSubmission(
   if (submission === undefined) {
     throw new ApiError(404, 'SUBMISSION_NOT_FOUND', 'Submission was not found');
   }
+  const targetStatus = action === 'apply' ? 'applied' : 'rejected';
+  if (submission.status === targetStatus) {
+    await saveSubmission(bucket, submission);
+    if (targetStatus === 'applied') {
+      const currentMaster = await readJson<FeatureCollection>(bucket, 'data/custom.geojson');
+      return { action: targetStatus, totalFeatures: currentMaster?.features.length ?? 0 };
+    }
+    return { action: targetStatus };
+  }
   if (submission.status !== 'pending') {
     throw new ApiError(409, 'SUBMISSION_ALREADY_REVIEWED', 'Submission has already been reviewed');
   }
@@ -155,7 +169,7 @@ export async function reviewSubmission(
     if (reviewedFeatures !== undefined) submission.reviewedFeatures = reviewedFeatures;
   }
 
-  submission.status = action === 'apply' ? 'applied' : 'rejected';
+  submission.status = targetStatus;
   submission.reviewerId = reviewer.id;
   submission.reviewedAt = new Date().toISOString();
   if (reviewMessage !== undefined) submission.reviewMessage = reviewMessage;

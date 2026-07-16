@@ -2,9 +2,30 @@ import { z } from 'zod';
 
 export const roomVisibilitySchema = z.enum(['private', 'unlisted', 'public']);
 export const roomMemberRoleSchema = z.enum(['owner', 'member', 'moderator']);
-export const pinTypeSchema = z.enum(['note', 'event', 'hazard', 'meetup']);
-export const pinStatusSchema = z.enum(['active', 'resolved', 'archived']);
+export const pinTypeSchema = z.enum([
+  'meeting',
+  'task',
+  'event',
+  'warning',
+  'repair',
+  'lost_found',
+  'checkin',
+  'road_closed',
+]);
+export const pinStatusSchema = z.enum([
+  'draft',
+  'active',
+  'resolved',
+  'expired',
+  'deleted',
+  'reported',
+  'confirmed',
+  'processing',
+  'rejected',
+]);
 export const pinVisibilitySchema = z.enum(['private', 'room', 'public']);
+export const pinReportReasonSchema = z.enum(['spam', 'abuse', 'inaccurate', 'safety', 'other']);
+export const pinReportStatusSchema = z.enum(['pending', 'reviewed', 'dismissed']);
 export const twinPrivacyModeSchema = z.enum(['private', 'room', 'public']);
 
 const nullableIdSchema = z.string().trim().min(1).max(128).nullable();
@@ -59,6 +80,11 @@ export const createPinCommentSchema = z.object({
   content: z.string().trim().min(1).max(1_000),
 }).strict();
 
+export const createPinReportSchema = z.object({
+  reason: pinReportReasonSchema,
+  detail: z.string().trim().min(1).max(1_000).nullable().optional(),
+}).strict();
+
 export const updateTwinProfileSchema = z.object({
   enabled: z.boolean().optional(),
   homePlaceId: nullableIdSchema.optional(),
@@ -93,6 +119,7 @@ export type CreateRoomInput = z.infer<typeof createRoomSchema>;
 export type CreatePinInput = z.infer<typeof createPinSchema>;
 export type UpdatePinInput = z.infer<typeof updatePinSchema>;
 export type CreatePinCommentInput = z.infer<typeof createPinCommentSchema>;
+export type CreatePinReportInput = z.infer<typeof createPinReportSchema>;
 export type UpdateTwinProfileInput = z.infer<typeof updateTwinProfileSchema>;
 export type CreateTwinEventInput = z.infer<typeof createTwinEventSchema>;
 export type RoomVisibility = z.infer<typeof roomVisibilitySchema>;
@@ -100,4 +127,6 @@ export type RoomMemberRole = z.infer<typeof roomMemberRoleSchema>;
 export type PinType = z.infer<typeof pinTypeSchema>;
 export type PinStatus = z.infer<typeof pinStatusSchema>;
 export type PinVisibility = z.infer<typeof pinVisibilitySchema>;
+export type PinReportReason = z.infer<typeof pinReportReasonSchema>;
+export type PinReportStatus = z.infer<typeof pinReportStatusSchema>;
 export type TwinPrivacyMode = z.infer<typeof twinPrivacyModeSchema>;

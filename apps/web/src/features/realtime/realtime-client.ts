@@ -2,9 +2,11 @@ import {
   clientMessageSchema,
   serverMessageSchema,
   type ClientMessage,
+  type CreatePinInput,
   type PresenceStatus,
   type RealtimeLocation,
   type ServerMessage,
+  type UpdatePinInput,
 } from '@yourtj/contracts';
 
 import type { RealtimeConnectionStatus } from '../../stores/realtime-store';
@@ -108,6 +110,20 @@ export class RoomRealtimeClient {
   sendLocation(location: RealtimeLocation): string {
     for (const [id, message] of this.pending) if (message.type === 'location.update') this.pending.delete(id);
     return this.queue({ type: 'location.update', requestId: requestId(), sentAt: Date.now(), payload: location });
+  }
+
+  createPin(pin: CreatePinInput): string {
+    return this.queue({ type: 'pin.create', requestId: requestId(), sentAt: Date.now(), payload: { pin } });
+  }
+
+  updatePin(pinId: string, update: UpdatePinInput): string {
+    return this.queue({ type: 'pin.update', requestId: requestId(), sentAt: Date.now(), payload: { pinId, update } });
+  }
+
+  deletePin(pinId: string, expectedVersion: number): string {
+    return this.queue({
+      type: 'pin.delete', requestId: requestId(), sentAt: Date.now(), payload: { pinId, expectedVersion },
+    });
   }
 
   ping(): string {

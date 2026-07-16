@@ -1,7 +1,8 @@
-import { API_LIMITS } from '@yourtj/contracts';
+import { API_LIMITS, type AuthenticatedUser, type GeoJsonFeature } from '@yourtj/contracts';
 import { beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from '../src';
+import { createSubmission, reviewSubmission } from '../src/repositories/submissions';
 import type { WorkerBindings } from '../src/types';
 
 const adminCredential = 'admin-test-credential-0000000000000001';
@@ -302,6 +303,17 @@ describe('worker application', () => {
     const stored = bucket.json<{ features: typeof feature[]; reviewedFeatures: typeof feature[] }>(`submissions/${created.id}.json`);
     expect(stored.features[0]?.properties.name).toBe('测试地点');
     expect(stored.reviewedFeatures[0]?.properties.name).toBe('审核后名称');
+  });
+
+  it('retries an already-applied review without duplicating id-less features', async () => {
+    const idLessFeature: GeoJsonFeature = {
+      type: 'Feature', geometry: { type: 'Point', coordinates: [121.5, 31.28] }, properties: { name: '无 ID 地点' },
+    };
+    const submission = await createSubmission(bucket as unknown as R2Bucket, { features: [idLessFeature] });
+    const reviewer: AuthenticatedUser = { id: 'admin-1', displayName: 'Admin', roles: ['admin'] };
+    await reviewSubmission(bucket as unknown as R2Bucket, submission.id, 'apply', reviewer);
+    await reviewSubmission(bucket as unknown as R2Bucket, submission.id, 'apply', reviewer);
+    expect(bucket.json<{ features: unknown[] }>('data/custom.geojson').features).toHaveLength(1);
   });
 
   it('serves existing map data and PMTiles objects', async () => {

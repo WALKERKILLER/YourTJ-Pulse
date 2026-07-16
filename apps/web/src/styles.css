@@ -141,6 +141,13 @@ button { cursor: pointer; }
 .map-marker-content.current-position-marker > *, .map-marker-content.destination-marker > * { transform: rotate(45deg); }
 .map-marker-content.current-position-marker { border-radius: 50%; background: var(--teal); transform: none; }
 .map-marker-content.current-position-marker > * { transform: none; }
+.room-pin-map-marker { display: grid; place-items: center; width: 31px; height: 31px; border: 3px solid var(--surface); border-radius: 50% 50% 50% 7px; background: var(--pink); color: white; box-shadow: 0 7px 22px rgba(42, 39, 35, 0.28); transform: rotate(-45deg); }
+.room-pin-map-marker > * { transform: rotate(45deg); }
+.room-pin-map-marker button { display: grid; width: 100%; height: 100%; place-items: center; padding: 0; border: 0; background: transparent; color: inherit; }
+.room-pin-map-marker.is-warning, .room-pin-map-marker.is-road_closed, .room-pin-map-marker.is-repair { background: var(--danger); }
+.room-pin-map-marker.is-task, .room-pin-map-marker.is-checkin { background: var(--blue); }
+.room-pin-map-marker.is-meeting, .room-pin-map-marker.is-event { background: var(--teal); }
+.room-pin-map-marker.is-draft { border-style: dashed; background: var(--ink); }
 .realtime-member-marker { position: relative; display: grid; place-items: center; width: 34px; height: 34px; border: 3px solid var(--surface); border-radius: 50%; background: var(--teal); color: white; box-shadow: 0 7px 22px rgba(25, 45, 40, 0.28); font-size: 10px; font-weight: 800; }
 .realtime-member-marker::before { position: absolute; inset: -7px; z-index: -1; border: 2px solid color-mix(in srgb, var(--teal) 46%, transparent); border-radius: 50%; content: ""; animation: member-breathe 2.2s ease-in-out infinite; }
 .realtime-member-marker small { position: absolute; top: 38px; left: 50%; max-width: 90px; overflow: hidden; padding: 3px 6px; border-radius: 6px; background: var(--surface); box-shadow: 0 5px 16px rgba(20, 30, 25, 0.15); color: var(--ink); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; transform: translateX(-50%); }
@@ -170,6 +177,51 @@ button { cursor: pointer; }
 .sharing-token button { height: 24px; padding: 0 7px; border: 0; border-radius: 6px; background: var(--surface-strong); color: var(--teal); font-size: 8px; font-weight: 800; }
 .sharing-actions { display: grid; grid-template-columns: 1fr auto; margin-top: 9px; gap: 6px; }
 .sharing-actions button { height: 34px; font-size: 9px; }
+
+.room-pin-detail { min-height: 100%; }
+.room-pin-detail .detail-heading h1 { font-size: 24px; }
+.pin-count { display: grid; min-width: 29px; height: 29px; place-items: center; border-radius: 9px; background: var(--surface-strong); color: var(--teal); font-size: 10px; font-weight: 800; }
+.pin-intro { margin: 13px 0 16px; color: var(--muted); font-size: 10px; line-height: 1.65; }
+.pin-place-button { width: 100%; }
+.pin-form { display: grid; margin-top: 17px; padding-top: 16px; border-top: 1px solid var(--line); gap: 12px; }
+.pin-form label { display: grid; color: var(--muted); font-size: 9px; font-weight: 700; gap: 5px; }
+.pin-form input, .pin-form select { height: 38px; border-radius: 10px; font-size: 11px; }
+.pin-form select, .pin-form textarea { width: 100%; border: 1px solid var(--line); outline: none; background: var(--surface); color: var(--ink); }
+.pin-form select { padding: 0 10px; }
+.pin-form textarea { min-height: 72px; resize: vertical; padding: 9px 10px; border-radius: 10px; font-size: 10px; line-height: 1.5; }
+.pin-form select:focus, .pin-form textarea:focus { border-color: var(--teal); box-shadow: 0 0 0 2px var(--focus); }
+.pin-form-actions { display: grid; grid-template-columns: 1fr auto; gap: 6px; }
+.pin-form-actions button { height: 38px; font-size: 10px; }
+.pin-coordinate { margin: 10px 0 0; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 8px; }
+.pin-create-form .pin-coordinate { margin: 0; }
+.pin-list { display: grid; margin-top: 15px; gap: 6px; }
+.pin-list > button { display: grid; grid-template-columns: auto 1fr; align-items: center; width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 11px; background: transparent; color: var(--ink); text-align: left; gap: 9px; }
+.pin-list > button:hover, .pin-list > button:focus-visible { outline: 0; background: var(--surface-strong); }
+.pin-list > button > span:last-child { display: flex; min-width: 0; flex-direction: column; }
+.pin-list strong { overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.pin-list small { margin-top: 3px; color: var(--muted); font-size: 8px; }
+.pin-list > p { margin: 12px 4px; color: var(--muted); font-size: 10px; line-height: 1.6; }
+.pin-type-dot { width: 9px; height: 9px; border-radius: 50%; background: var(--pink); box-shadow: 0 0 0 4px color-mix(in srgb, var(--pink) 12%, transparent); }
+.pin-type-dot.is-warning, .pin-type-dot.is-road_closed, .pin-type-dot.is-repair { background: var(--danger); box-shadow: 0 0 0 4px color-mix(in srgb, var(--danger) 12%, transparent); }
+.pin-type-dot.is-task, .pin-type-dot.is-checkin { background: var(--blue); box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 12%, transparent); }
+.pin-type-dot.is-meeting, .pin-type-dot.is-event { background: var(--teal); box-shadow: 0 0 0 4px color-mix(in srgb, var(--teal) 12%, transparent); }
+.pin-thread, .pin-report { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+.pin-thread h2, .pin-report h2 { display: flex; align-items: center; margin: 0 0 10px; font-size: 11px; gap: 6px; }
+.pin-thread > p { color: var(--muted); font-size: 9px; }
+.pin-comment { display: grid; grid-template-columns: 1fr auto; margin-bottom: 7px; padding: 9px; border-radius: 9px; background: var(--surface-strong); }
+.pin-comment strong { font-size: 9px; }
+.pin-comment span { grid-column: 1 / -1; margin-top: 4px; font-size: 9px; line-height: 1.5; }
+.pin-comment time, .pin-activity time { color: var(--muted); font-size: 7px; }
+.pin-thread form { display: grid; grid-template-columns: 1fr auto; margin-top: 9px; gap: 6px; }
+.pin-thread form input { height: 36px; font-size: 10px; }
+.pin-thread form button { height: 36px; }
+.pin-activity { display: flex; align-items: baseline; justify-content: space-between; padding: 6px 0; border-bottom: 1px dashed var(--line); font-size: 8px; gap: 8px; }
+.pin-report { display: grid; gap: 8px; }
+.pin-report h2 { margin: 0; }
+.pin-report input { height: 36px; font-size: 10px; }
+.pin-report button { justify-self: start; }
+.pin-message { display: flex; align-items: flex-start; margin: 13px 0 0; padding: 9px; border-radius: 9px; background: color-mix(in srgb, var(--danger) 9%, transparent); color: var(--danger); font-size: 9px; line-height: 1.5; gap: 6px; }
+.pin-message svg { flex: none; margin-top: 1px; }
 
 .map-loading { position: absolute; z-index: 4; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--paper); color: var(--ink); flex-direction: column; }
 .map-loading strong { margin-top: 18px; font-size: 14px; }
@@ -365,6 +417,7 @@ button { cursor: pointer; }
   .mobile-sheet .detail-illustration { display: none; }
   .mobile-sheet .detail-empty p { margin-top: 4px; font-size: 10px; }
   .mobile-sheet .place-detail { padding: 4px 6px 20px; }
+  .mobile-sheet .room-pin-detail { height: calc(100% - 33px); overflow: auto; }
   .mobile-sheet .navigation-panel { padding: 4px 6px 20px; }
   .map-attribution { bottom: 6px; left: 12px; z-index: 12; opacity: 0.5; }
   .map-error { right: 65px; bottom: calc(var(--sheet-height, 210px) + 14px); left: 10px; }

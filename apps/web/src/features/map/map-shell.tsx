@@ -12,12 +12,13 @@ import {
   Menu,
   Navigation,
   PencilLine,
+  Plus,
   Search,
   ShieldCheck,
   WifiOff,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import searchIndexData from '../../../../../data/generated/search-index.json';
 import worldConfig from '../../../../../data/generated/world-config.json';
@@ -34,6 +35,7 @@ import { requestCampusRoutes } from './navigation-client';
 import { NavigationPanel } from './navigation-panel';
 import { RealtimeMemberLayer } from '../realtime/realtime-member-layer';
 import { RoomSharingPanel } from '../realtime/room-sharing-panel';
+import { RoomPinPanel, type PinDraftCoordinate } from '../realtime/room-pin-panel';
 import { useRoomRealtime } from '../realtime/use-room-realtime';
 
 const SEARCH_INDEX = searchIndexData as SearchIndex;
@@ -200,11 +202,14 @@ interface DetailContentProps {
   onPlan: () => void;
   onShare: () => void;
   onStartFollowing: () => void;
+  roomContent?: ReactNode;
 }
 
 function DetailContent(props: DetailContentProps) {
   const destination = useNavigationStore((state) => state.destination);
-  return destination ? <NavigationPanel onOverview={props.onOverview} onPlan={props.onPlan} onShare={props.onShare} onStartFollowing={props.onStartFollowing} /> : <PlaceDetails onNavigate={props.onNavigate} />;
+  return destination
+    ? <NavigationPanel onOverview={props.onOverview} onPlan={props.onPlan} onShare={props.onShare} onStartFollowing={props.onStartFollowing} />
+    : props.roomContent ?? <PlaceDetails onNavigate={props.onNavigate} />;
 }
 
 function MobileSheet(props: DetailContentProps) {
@@ -266,6 +271,9 @@ export function MapShell() {
   const [mapReady, setMapReady] = useState(false);
   const [mapError, setMapError] = useState(false);
   const [mapInstance, setMapInstance] = useState<MapLibreMap | null>(null);
+  const [placingPin, setPlacingPin] = useState(false);
+  const [pinDraft, setPinDraft] = useState<PinDraftCoordinate | null>(null);
+  const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
   const mapStyle = useMemo(() => createCampusStyle(theme), [theme]);
   const activeRoute = routes[activeRouteIndex];
 
@@ -367,6 +375,11 @@ export function MapShell() {
   }
 
   function selectFeature(event: MapLayerMouseEvent): void {
+    if (roomId && placingPin) {
+      setPinDraft({ longitude: event.lngLat.lng, latitude: event.lngLat.lat });
+      setPlacingPin(false);
+      return;
+    }
     if (selectingDestination) {
       setDestination({ name: '地图选点', longitude: event.lngLat.lng, latitude: event.lngLat.lat });
       setSelectingDestination(false);
@@ -382,6 +395,17 @@ export function MapShell() {
       navigate(`/place/${encodeURIComponent(id)}`);
     }
   }
+
+  const roomPinContent = roomId ? <RoomPinPanel
+    draft={pinDraft}
+    onDraftChange={setPinDraft}
+    onPlacingChange={setPlacingPin}
+    onSelectPin={setSelectedPinId}
+    placing={placingPin}
+    realtime={realtime}
+    roomId={roomId}
+    selectedPinId={selectedPinId}
+  /> : undefined;
 
   return (
     <main className="map-app" style={{ '--sheet-height': `${sheetHeight}px` } as CSSProperties}>
@@ -402,6 +426,12 @@ export function MapShell() {
           <MapControls onThemeToggle={toggleTheme} onLocate={(position) => setCurrentPosition(position)} />
           {routes.map((route, index) => <MapRoute key={route.id} id={`campus-route-${index}`} coordinates={route.coordinates} color={index === activeRouteIndex ? '#e24b74' : '#7187b8'} width={index === activeRouteIndex ? 6 : 3} />)}
           {roomId ? <RealtimeMemberLayer members={realtime.members} /> : null}
+          {roomId ? realtime.pins.map((pin) => <MapMarker key={pin.id} longitude={pin.longitude} latitude={pin.latitude}>
+            <MarkerContent className={`room-pin-map-marker is-${pin.type}`}>
+              <button type="button" onClick={(event) => { event.stopPropagation(); setSelectedPinId(pin.id); }} aria-label={`打开 Pin：${pin.title}`}><MapPin size={15} /></button>
+            </MarkerContent>
+          </MapMarker>) : null}
+          {pinDraft ? <MapMarker longitude={pinDraft.longitude} latitude={pinDraft.latitude}><MarkerContent className="room-pin-map-marker is-draft"><Plus size={15} /></MarkerContent></MapMarker> : null}
           {currentPosition ? <MapMarker longitude={currentPosition.longitude} latitude={currentPosition.latitude}><MarkerContent className="current-position-marker"><LocateFixed size={16} /></MarkerContent></MapMarker> : null}
           {destination ? <MapMarker longitude={destination.longitude} latitude={destination.latitude}><MarkerContent className="destination-marker"><MapPin size={17} /></MarkerContent></MapMarker> : null}
         </Map>
@@ -428,8 +458,8 @@ export function MapShell() {
 
       {roomId ? <RoomSharingPanel roomId={roomId} realtime={realtime} /> : null}
 
-      <aside className="detail-panel"><DetailContent onNavigate={selectCatalogPlace} onOverview={() => overviewRoute()} onPlan={() => void planRoute()} onShare={() => void shareRoute()} onStartFollowing={() => { setStatus('following'); setMessage(activeRoute?.instructions[0]?.text ?? '开始导航'); }} /></aside>
-      <MobileSheet onNavigate={selectCatalogPlace} onOverview={() => overviewRoute()} onPlan={() => void planRoute()} onShare={() => void shareRoute()} onStartFollowing={() => { setStatus('following'); setMessage(activeRoute?.instructions[0]?.text ?? '开始导航'); }} />
+      <aside className="detail-panel"><DetailContent roomContent={roomPinContent} onNavigate={selectCatalogPlace} onOverview={() => overviewRoute()} onPlan={() => void planRoute()} onShare={() => void shareRoute()} onStartFollowing={() => { setStatus('following'); setMessage(activeRoute?.instructions[0]?.text ?? '开始导航'); }} /></aside>
+      <MobileSheet roomContent={roomPinContent} onNavigate={selectCatalogPlace} onOverview={() => overviewRoute()} onPlan={() => void planRoute()} onShare={() => void shareRoute()} onStartFollowing={() => { setStatus('following'); setMessage(activeRoute?.instructions[0]?.text ?? '开始导航'); }} />
 
       <div className="map-attribution">
         <span>© OpenStreetMap</span><span>YOURTJ · 2026</span><ArrowRight size={13} />

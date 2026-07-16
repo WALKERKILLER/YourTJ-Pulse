@@ -103,12 +103,14 @@ describe('locationUpdateSchema', () => {
     expect(message.payload.kind).toBe('twin_simulated');
   });
 
-  it('defines every M5 client message as a strict discriminated union', () => {
+  it('defines every realtime client message as a strict discriminated union', () => {
     const messages = [
       { type: 'room.join', requestId: '1', sentAt: 1, payload: {} },
       { type: 'presence.update', requestId: '2', sentAt: 2, payload: { status: 'away', sharingLocation: false } },
-      { type: 'pin.create', requestId: '3', sentAt: 3, payload: { pin: { type: 'meetup', title: '集合', longitude: 121.5, latitude: 31.28 } } },
-      { type: 'ping', requestId: '4', sentAt: 4, payload: {} },
+      { type: 'pin.create', requestId: '3', sentAt: 3, payload: { pin: { type: 'meeting', title: '集合', longitude: 121.5, latitude: 31.28 } } },
+      { type: 'pin.update', requestId: '4', sentAt: 4, payload: { pinId: 'pin-1', update: { expectedVersion: 1, title: '新集合点' } } },
+      { type: 'pin.delete', requestId: '5', sentAt: 5, payload: { pinId: 'pin-1', expectedVersion: 2 } },
+      { type: 'ping', requestId: '6', sentAt: 6, payload: {} },
     ];
     for (const message of messages) expect(clientMessageSchema.safeParse(message).success).toBe(true);
     expect(clientMessageSchema.safeParse({ ...messages[0], unexpected: true }).success).toBe(false);

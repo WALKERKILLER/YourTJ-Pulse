@@ -7,7 +7,10 @@ import { claimSubmissionReview } from '../src/repositories/business';
 import type { WorkerBindings } from '../src/types';
 import { createTestDatabase, type TestDatabase } from './sqlite-d1';
 
-const migrationPath = fileURLToPath(new URL('../migrations/0001_core.sql', import.meta.url));
+const migrationPaths = [
+  fileURLToPath(new URL('../migrations/0001_core.sql', import.meta.url)),
+  fileURLToPath(new URL('../migrations/0002_map_collaboration.sql', import.meta.url)),
+];
 const ownerToken = 'owner-test-session-000000000000000001';
 const memberToken = 'member-test-session-00000000000000001';
 const outsiderToken = 'outsider-test-session-000000000000001';
@@ -45,7 +48,7 @@ describe('M4 D1 business API', () => {
   let database: TestDatabase;
 
   beforeEach(async () => {
-    database = createTestDatabase(await readFile(migrationPath, 'utf8'));
+    database = createTestDatabase((await Promise.all(migrationPaths.map((path) => readFile(path, 'utf8')))).join('\n'));
   });
 
   afterEach(() => database.close());
@@ -57,7 +60,7 @@ describe('M4 D1 business API', () => {
       expect(names).toContain(name);
     }
     expect(names.some((name) => /gps|trajectory|location_history/.test(name))).toBe(false);
-    await expect(database.binding.prepare("INSERT INTO pins (id, creator_id, type, title, longitude, latitude, status, visibility, created_at, updated_at) VALUES ('bad', 'missing', 'note', 'bad', 181, 0, 'active', 'public', 'x', 'x')").run()).rejects.toThrow();
+    await expect(database.binding.prepare("INSERT INTO pins (id, creator_id, type, title, longitude, latitude, status, visibility, created_at, updated_at) VALUES ('bad', 'missing', 'task', 'bad', 181, 0, 'active', 'public', 'x', 'x')").run()).rejects.toThrow();
   });
 
   it('supports an explicitly enabled development identity and persists the user', async () => {
@@ -118,12 +121,12 @@ describe('M4 D1 business API', () => {
       method: 'POST', body: JSON.stringify({ name: '临时房间', visibility: 'public', expiresAt: '2099-01-01T00:00:00.000Z' }),
     }));
     const roomPin = await data<{ id: string }>(await request(database.binding, '/api/pins', ownerToken, {
-      method: 'POST', body: JSON.stringify({ roomId: room.id, type: 'note', title: '房间临时点', longitude: 121.5, latitude: 31.28, visibility: 'room' }),
+      method: 'POST', body: JSON.stringify({ roomId: room.id, type: 'task', title: '房间临时点', longitude: 121.5, latitude: 31.28, visibility: 'room' }),
     }));
     await database.binding.prepare("UPDATE rooms SET expires_at = '2020-01-01T00:00:00.000Z' WHERE id = ?").bind(room.id).run();
     expect((await request(database.binding, `/api/rooms/${room.id}`, ownerToken)).status).toBe(410);
     expect((await request(database.binding, '/api/pins', ownerToken, {
-      method: 'POST', body: JSON.stringify({ roomId: room.id, type: 'note', title: '过期房间点', longitude: 121.5, latitude: 31.28, visibility: 'room' }),
+      method: 'POST', body: JSON.stringify({ roomId: room.id, type: 'task', title: '过期房间点', longitude: 121.5, latitude: 31.28, visibility: 'room' }),
     })).status).toBe(410);
     expect((await request(database.binding, `/api/pins/${roomPin.id}`, ownerToken)).status).toBe(410);
     expect((await request(database.binding, `/api/pins/${roomPin.id}/comments`, ownerToken, {
@@ -135,7 +138,7 @@ describe('M4 D1 business API', () => {
     expect((await request(database.binding, `/api/rooms/${room.id}`, ownerToken, { method: 'DELETE' })).status).toBe(200);
 
     const pin = await data<{ id: string }>(await request(database.binding, '/api/pins', memberToken, {
-      method: 'POST', body: JSON.stringify({ type: 'note', title: '临时点', longitude: 121.5, latitude: 31.28, visibility: 'private', expiresAt: '2099-01-01T00:00:00.000Z' }),
+      method: 'POST', body: JSON.stringify({ type: 'task', title: '临时点', longitude: 121.5, latitude: 31.28, visibility: 'private', expiresAt: '2099-01-01T00:00:00.000Z' }),
     }));
     await database.binding.prepare("UPDATE pins SET expires_at = '2020-01-01T00:00:00.000Z' WHERE id = ?").bind(pin.id).run();
     expect((await request(database.binding, `/api/pins/${pin.id}`, memberToken)).status).toBe(410);
@@ -152,7 +155,7 @@ describe('M4 D1 business API', () => {
     await request(database.binding, `/api/rooms/${room.id}/join`, memberToken, { method: 'POST' });
     const created = await request(database.binding, '/api/pins', memberToken, {
       method: 'POST',
-      body: JSON.stringify({ roomId: room.id, type: 'meetup', title: '集合点', longitude: 121.5, latitude: 31.28, visibility: 'room' }),
+      body: JSON.stringify({ roomId: room.id, type: 'meeting', title: '集合点', longitude: 121.5, latitude: 31.28, visibility: 'room' }),
     });
     expect(created.status).toBe(201);
     const pin = await data<{ id: string; version: number }>(created);
