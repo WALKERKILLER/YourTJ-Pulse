@@ -1,4 +1,4 @@
-import { submitFeatureSchema } from '@yourtj/contracts';
+import { API_LIMITS, featureSchema, submitFeatureSchema } from '@yourtj/contracts';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -19,11 +19,15 @@ const reviewSchema = z
   .object({
     action: z.enum(['apply', 'reject']),
     message: z.string().trim().max(500).optional(),
+    features: z.array(featureSchema).min(1).max(API_LIMITS.featuresPerSubmission).optional(),
   })
   .strict();
 
 const reviewMessageSchema = z
-  .object({ message: z.string().trim().max(500).optional() })
+  .object({
+    message: z.string().trim().max(500).optional(),
+    features: z.array(featureSchema).min(1).max(API_LIMITS.featuresPerSubmission).optional(),
+  })
   .strict();
 
 export const submissionsRouter = new Hono<WorkerEnv>();
@@ -78,6 +82,7 @@ submissionsRouter.post(
       input.action,
       context.get('user'),
       input.message,
+      input.action === 'apply' ? input.features : undefined,
     );
     return context.json({ ok: true, ...result });
   },
@@ -97,6 +102,7 @@ adminSubmissionsRouter.post('/:id/apply', async (context) => {
       'apply',
       context.get('user'),
       input.message,
+      input.features,
     ),
   );
 });

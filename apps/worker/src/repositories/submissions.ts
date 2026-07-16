@@ -16,9 +16,10 @@ export interface Submission {
   reviewerId?: string;
   reviewedAt?: string;
   reviewMessage?: string;
+  reviewedFeatures?: GeoJsonFeature[];
 }
 
-export type SubmissionSummary = Omit<Submission, 'features' | 'images'>;
+export type SubmissionSummary = Omit<Submission, 'features' | 'images' | 'reviewedFeatures'>;
 
 function submissionKey(id: string) {
   return `submissions/${id}.json`;
@@ -111,6 +112,7 @@ export async function reviewSubmission(
   action: 'apply' | 'reject',
   reviewer: AuthenticatedUser,
   reviewMessage?: string,
+  reviewedFeatures?: GeoJsonFeature[],
 ) {
   const submission = await getSubmission(bucket, id);
   if (submission === undefined) {
@@ -125,9 +127,11 @@ export async function reviewSubmission(
     const master =
       (await readJson<FeatureCollection>(bucket, 'data/custom.geojson')) ??
       ({ type: 'FeatureCollection', features: [] } satisfies FeatureCollection);
-    master.features = mergeFeatures(master.features, submission.features);
+    const acceptedFeatures = reviewedFeatures ?? submission.features;
+    master.features = mergeFeatures(master.features, acceptedFeatures);
     totalFeatures = master.features.length;
     await writeJson(bucket, 'data/custom.geojson', master);
+    if (reviewedFeatures !== undefined) submission.reviewedFeatures = reviewedFeatures;
   }
 
   submission.status = action === 'apply' ? 'applied' : 'rejected';
