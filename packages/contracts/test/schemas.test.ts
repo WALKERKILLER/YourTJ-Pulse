@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   API_LIMITS,
+  clientMessageSchema,
   createTwinEventSchema,
   isWebSocketMessageWithinLimit,
   locationUpdateSchema,
+  serverMessageSchema,
   submitFeatureSchema,
 } from '../src';
 
@@ -99,6 +101,28 @@ describe('locationUpdateSchema', () => {
       },
     });
     expect(message.payload.kind).toBe('twin_simulated');
+  });
+
+  it('defines every M5 client message as a strict discriminated union', () => {
+    const messages = [
+      { type: 'room.join', requestId: '1', sentAt: 1, payload: {} },
+      { type: 'presence.update', requestId: '2', sentAt: 2, payload: { status: 'away', sharingLocation: false } },
+      { type: 'pin.create', requestId: '3', sentAt: 3, payload: { pin: { type: 'meetup', title: '集合', longitude: 121.5, latitude: 31.28 } } },
+      { type: 'ping', requestId: '4', sentAt: 4, payload: {} },
+    ];
+    for (const message of messages) expect(clientMessageSchema.safeParse(message).success).toBe(true);
+    expect(clientMessageSchema.safeParse({ ...messages[0], unexpected: true }).success).toBe(false);
+  });
+
+  it('validates snapshots and acknowledgements from the room server', () => {
+    expect(serverMessageSchema.safeParse({
+      type: 'room.snapshot', eventId: 'event-1', sequence: 1, sentAt: 10,
+      payload: { roomId: 'room-1', members: [] },
+    }).success).toBe(true);
+    expect(serverMessageSchema.safeParse({
+      type: 'room.ack', eventId: 'event-2', sequence: 2, sentAt: 11, requestId: 'request-1',
+      payload: { acceptedType: 'room.join', status: 'accepted' },
+    }).success).toBe(true);
   });
 
   it('enforces the transport message size limit before parsing', () => {

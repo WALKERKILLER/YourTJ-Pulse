@@ -32,6 +32,9 @@ import { useNavigationStore, type NavigationEndpoint } from '../../stores/naviga
 import { usePreferencesStore } from '../../stores/preferences-store';
 import { requestCampusRoutes } from './navigation-client';
 import { NavigationPanel } from './navigation-panel';
+import { RealtimeMemberLayer } from '../realtime/realtime-member-layer';
+import { RoomSharingPanel } from '../realtime/room-sharing-panel';
+import { useRoomRealtime } from '../realtime/use-room-realtime';
 
 const SEARCH_INDEX = searchIndexData as SearchIndex;
 
@@ -139,6 +142,23 @@ function PlaceDetails({ onNavigate }: { onNavigate: (place: SearchDocument) => v
     navigate('/');
   };
 
+  if (roomId && !selected && !catalogPlace) {
+    return (
+      <article className="place-detail">
+        <div className="detail-heading">
+          <div><p className="eyebrow">协作房间</p><h1>房间 {roomId}</h1></div>
+          <Button size="icon" variant="ghost" onClick={close} aria-label="离开房间视图"><X size={18} /></Button>
+        </div>
+        <div className="place-meta"><span>实时成员</span><span>端到端临时位置</span></div>
+        <dl className="property-list">
+          <div><dt>位置共享</dt><dd>默认关闭；请使用地图左下角面板主动开始。</dd></div>
+          <div><dt>可见范围</dt><dd>仅当前房间成员，不保存永久 GPS 轨迹。</dd></div>
+          <div><dt>断线恢复</dt><dd>网络恢复后自动重连，并重新获取房间快照。</dd></div>
+        </dl>
+      </article>
+    );
+  }
+
   return (
     <article className="place-detail">
       <div className="detail-heading">
@@ -221,6 +241,8 @@ function MobileSheet(props: DetailContentProps) {
 }
 
 export function MapShell() {
+  const { roomId } = useParams();
+  const realtime = useRoomRealtime(roomId);
   const navigate = useNavigate();
   const theme = usePreferencesStore((state) => state.theme);
   const toggleTheme = usePreferencesStore((state) => state.toggleTheme);
@@ -379,6 +401,7 @@ export function MapShell() {
         >
           <MapControls onThemeToggle={toggleTheme} onLocate={(position) => setCurrentPosition(position)} />
           {routes.map((route, index) => <MapRoute key={route.id} id={`campus-route-${index}`} coordinates={route.coordinates} color={index === activeRouteIndex ? '#e24b74' : '#7187b8'} width={index === activeRouteIndex ? 6 : 3} />)}
+          {roomId ? <RealtimeMemberLayer members={realtime.members} /> : null}
           {currentPosition ? <MapMarker longitude={currentPosition.longitude} latitude={currentPosition.latitude}><MarkerContent className="current-position-marker"><LocateFixed size={16} /></MarkerContent></MapMarker> : null}
           {destination ? <MapMarker longitude={destination.longitude} latitude={destination.latitude}><MarkerContent className="destination-marker"><MapPin size={17} /></MarkerContent></MapMarker> : null}
         </Map>
@@ -402,6 +425,8 @@ export function MapShell() {
         <button className={`tool-link ${selectingDestination ? 'is-active' : ''}`} onClick={() => setSelectingDestination(!selectingDestination)} aria-pressed={selectingDestination}><MapPin size={18} /><span>选点</span></button>
         <a href="https://github.com/WALKERKILLER/YourTJ-Pulse" target="_blank" rel="noreferrer" className="tool-link"><CircleHelp size={18} /><span>关于</span></a>
       </nav>
+
+      {roomId ? <RoomSharingPanel roomId={roomId} realtime={realtime} /> : null}
 
       <aside className="detail-panel"><DetailContent onNavigate={selectCatalogPlace} onOverview={() => overviewRoute()} onPlan={() => void planRoute()} onShare={() => void shareRoute()} onStartFollowing={() => { setStatus('following'); setMessage(activeRoute?.instructions[0]?.text ?? '开始导航'); }} /></aside>
       <MobileSheet onNavigate={selectCatalogPlace} onOverview={() => overviewRoute()} onPlan={() => void planRoute()} onShare={() => void shareRoute()} onStartFollowing={() => { setStatus('following'); setMessage(activeRoute?.instructions[0]?.text ?? '开始导航'); }} />

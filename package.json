@@ -10,6 +10,8 @@
   "scripts": {
     "dev": "pnpm --parallel --filter './apps/*' dev",
     "build": "pnpm --filter @yourtj/web build && pnpm --filter @yourtj/worker build && pnpm --filter './packages/*' build",
+    "contracts:check": "pnpm --filter @yourtj/contracts protocol:check",
+    "contracts:generate": "pnpm --filter @yourtj/contracts protocol:generate",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",

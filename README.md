@@ -4,7 +4,7 @@
 
 YourTJ Pulse 是面向同济大学的实时协作地图与数字校园分身平台。项目从原 YTJ-Map 演进而来：基础地图继续使用 OpenStreetMap、MapLibre 与 PMTiles，应用层逐步扩展地点搜索、校园导航、多人房间和 PulseTown 数字校园模式。
 
-当前已完成工程与安全基线、React 地图基础和校园世界编译器。旧地图、编辑器和审核页仍通过 `/legacy-map`、`/legacy-editor`、`/legacy-admin` 保留，后续导航、实时协作与 Flutter 客户端按 `map-plan.md` 分阶段接入。
+当前已完成工程与安全基线、React 校园地图、搜索导航、D1 业务 API 与多人实时房间。旧地图、编辑器和审核页仍通过 `/legacy-map`、`/legacy-editor`、`/legacy-admin` 保留，后续地图协作、PulseTown 与 Flutter 客户端按 `map-plan.md` 分阶段接入。
 
 ## 产品模式
 
@@ -13,8 +13,8 @@ YourTJ Pulse 是面向同济大学的实时协作地图与数字校园分身平�
 
 ## 当前技术栈
 
-- Worker：Cloudflare Workers、Hono、TypeScript、D1、R2。
-- 契约：Zod、共享 TypeScript Schema、统一 API 响应。
+- Worker：Cloudflare Workers、Durable Objects、Hono、TypeScript、D1、R2。
+- 契约：Zod、共享 TypeScript/JSON Schema/Dart Model、统一 API 响应。
 - Web：React 19、Vite、MapLibre GL、PMTiles、TanStack Query、Zustand。
 - 数据：稳定 ID、WGS84/本地场景坐标、导航图、场景与碰撞数据编译器。
 - 工程：pnpm Workspace、Vitest、ESLint、GitHub Actions。
@@ -27,8 +27,11 @@ apps/worker/                # 模块化 Cloudflare Worker
   src/auth/                 # Bearer 身份认证与角色授权
   src/routes/               # 地点、路线、房间、协作点、Twin 与审核路由
   src/repositories/         # D1 业务数据与 R2 地图/审核数据访问
+  src/durable-objects/      # Hibernation WebSocket 实时房间
   migrations/               # D1 核心表与约束
 packages/contracts/         # API、GeoJSON 与实时协议 Schema
+  generated/                # 实时 JSON Schema 与 Dart Model
+docs/                       # 生成的实时协议文档
 packages/campus-style/      # Web 共用地图样式与交互图层 ID
 packages/data-pipeline/     # 校园世界编译与产物校验
 public/                     # 静态资源与迁移期旧页面
@@ -58,6 +61,7 @@ pnpm lint
 pnpm typecheck
 pnpm test
 pnpm build
+pnpm contracts:check
 pnpm data:validate
 ```
 
@@ -91,6 +95,7 @@ pnpm data:validate
 | `/api/rooms` | POST | 创建协作房间 |
 | `/api/rooms/:id` | GET、DELETE | 房间详情或由房主删除 |
 | `/api/rooms/:id/join`、`/leave` | POST | 加入或离开房间 |
+| `/api/realtime/rooms/:id` | WebSocket | 房间 Snapshot、成员位置、Presence 与 Pin 事件 |
 | `/api/pins` | GET、POST | 查询或创建可见协作点 |
 | `/api/pins/:id` | GET、PATCH、DELETE | 协作点详情、版本化更新或删除 |
 | `/api/pins/:id/comments` | GET、POST | 协作点评论 |
@@ -103,6 +108,8 @@ pnpm data:validate
 | `/api/admin/submissions/:id/reject` | POST | 拒绝提交（moderator/admin） |
 
 所有新 API 使用 `{ "data": ... }` 或 `{ "error": { "code", "message", "details" } }`。旧 `/api/submit` 与 `/api/submissions*` 在迁移期保留原成功响应形状，但审核路径同样要求可信 Session 和角色授权。
+
+实时连接使用 `yourtj.realtime.v1` 子协议。生产 Session 仅在握手子协议中传输，不进入 URL；开发模式可留空并使用 `.dev.vars` 的显式本地身份。完整消息结构、关闭码与重试语义见 `docs/realtime-protocol.md`。
 
 ## 编辑与审核流程
 
@@ -118,5 +125,6 @@ pnpm data:validate
 - 跨域只允许同源或 `CORS_ORIGINS` 明确列出的来源。
 - 不提交 `.env`、`.dev.vars`、Cookie、Access Token 或真实位置数据。
 - 第一版默认不共享位置、不保存永久 GPS 轨迹，并始终区分 GPS 与模拟分身。
+- 实时 GPS 只存在于活跃 WebSocket attachment 和浏览器内存；D1、R2 与 Durable Object Storage 不保存位置坐标。
 
 贡献方式见 `CONTRIBUTING.md`，漏洞报告方式见 `SECURITY.md`，完整实施顺序见 `map-plan.md`（规划文件当前位于仓库工作目录上层）。
