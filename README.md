@@ -129,6 +129,7 @@ pnpm data:validate
 - 跨域只允许同源或 `CORS_ORIGINS` 明确列出的来源。
 - 不提交 `.env`、`.dev.vars`、Cookie、Access Token 或真实位置数据。
 - 第一版默认不共享位置、不保存永久 GPS 轨迹，并始终区分 GPS 与模拟分身。
-- 实时 GPS 只存在于活跃 WebSocket attachment 和浏览器内存；D1、R2 与 Durable Object Storage 不保存位置坐标。
+- 实时 GPS 只存在于活跃 WebSocket attachment 和客户端内存；D1、R2 与 Durable Object Storage 不保存位置坐标。
+- 共享等级、保留期限与删除触发见 `docs/PRIVACY.md`；脱敏指标和告警基线见 `docs/OBSERVABILITY.md`。
 
 贡献方式见 `CONTRIBUTING.md`，漏洞报告方式见 `SECURITY.md`，完整实施顺序见 `map-plan.md`（规划文件当前位于仓库工作目录上层）。

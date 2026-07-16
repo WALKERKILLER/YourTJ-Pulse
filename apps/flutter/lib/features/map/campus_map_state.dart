@@ -15,6 +15,7 @@ class CampusMapState {
     required this.isOnline,
     required this.lowPower,
     required this.locationSharingEnabled,
+    required this.locationSharingLevel,
     this.currentUserId,
     this.roomId,
     this.destination,
@@ -36,6 +37,7 @@ class CampusMapState {
         isOnline: true,
         lowPower: false,
         locationSharingEnabled: false,
+        locationSharingLevel: LocationSharingLevel.hidden,
       );
 
   final CampusMode mode;
@@ -45,6 +47,7 @@ class CampusMapState {
   final bool isOnline;
   final bool lowPower;
   final bool locationSharingEnabled;
+  final LocationSharingLevel locationSharingLevel;
   final String? currentUserId;
   final String? roomId;
   final CampusPlace? destination;
@@ -65,6 +68,7 @@ class CampusMapState {
     bool? isOnline,
     bool? lowPower,
     bool? locationSharingEnabled,
+    LocationSharingLevel? locationSharingLevel,
     Object? currentUserId = _unset,
     Object? roomId = _unset,
     Object? destination = _unset,
@@ -86,6 +90,8 @@ class CampusMapState {
         lowPower: lowPower ?? this.lowPower,
         locationSharingEnabled:
             locationSharingEnabled ?? this.locationSharingEnabled,
+        locationSharingLevel:
+            locationSharingLevel ?? this.locationSharingLevel,
         currentUserId: identical(currentUserId, _unset)
             ? this.currentUserId
             : currentUserId as String?,
@@ -147,8 +153,11 @@ class CampusMapController extends Notifier<CampusMapState> {
   void setNetworkAvailable(bool available) => state = state.copyWith(
       isOnline: available, errorMessage: available ? null : '网络不可用，地图保留已加载内容');
   void setLowPower(bool enabled) => state = state.copyWith(lowPower: enabled);
-  void setLocationSharing(bool enabled) =>
-      state = state.copyWith(locationSharingEnabled: enabled);
+  void setLocationSharingLevel(LocationSharingLevel level) =>
+      state = state.copyWith(
+        locationSharingEnabled: level != LocationSharingLevel.hidden,
+        locationSharingLevel: level,
+      );
   void setTheme(bool dark) => state = state.copyWith(isDark: dark);
   void setPlaces(List<CampusPlace> places) =>
       state = state.copyWith(places: places);

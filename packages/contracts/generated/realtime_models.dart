@@ -5,6 +5,7 @@ typedef JsonMap = Map<String, dynamic>;
 
 enum PresenceStatus { available, busy, away }
 enum MemberConnectionStatus { live, delayed, stale, offline }
+enum LocationSharingLevel { precise, approximate, hidden }
 
 class RealtimeLocation {
   const RealtimeLocation({required this.seq, required this.longitude, required this.latitude, required this.accuracy, this.altitude, this.heading, this.speed, this.kind = 'gps'});
@@ -41,13 +42,14 @@ class RealtimeLocation {
 typedef LocationUpdate = RealtimeLocation;
 
 class RoomMember {
-  const RoomMember({required this.userId, required this.displayName, required this.presence, required this.sharingLocation, required this.connectionStatus, required this.joinedAt, required this.updatedAt, this.avatarUrl, this.location});
+  const RoomMember({required this.userId, required this.displayName, required this.presence, required this.sharingLocation, required this.locationSharingLevel, required this.connectionStatus, required this.joinedAt, required this.updatedAt, this.avatarUrl, this.location});
 
   final String userId;
   final String displayName;
   final String? avatarUrl;
   final PresenceStatus presence;
   final bool sharingLocation;
+  final LocationSharingLevel locationSharingLevel;
   final MemberConnectionStatus connectionStatus;
   final int joinedAt;
   final int updatedAt;
@@ -59,6 +61,7 @@ class RoomMember {
     avatarUrl: json['avatarUrl'] as String?,
     presence: PresenceStatus.values.byName(json['presence'] as String),
     sharingLocation: json['sharingLocation'] as bool,
+    locationSharingLevel: LocationSharingLevel.values.byName(json['locationSharingLevel'] as String),
     connectionStatus: MemberConnectionStatus.values.byName(json['connectionStatus'] as String),
     joinedAt: json['joinedAt'] as int,
     updatedAt: json['updatedAt'] as int,

@@ -23,6 +23,10 @@ interface TestAttachment {
   joined: boolean;
   joinedAt: number;
   lastSeq: number;
+  lastLocation?: {
+    seq: number; longitude: number; latitude: number; accuracy: number; kind: 'gps';
+  };
+  locationSharingLevel: 'precise' | 'approximate' | 'hidden';
   presence: 'available' | 'busy' | 'away';
   processedRequestIds: string[];
   roomExpiresAt: string | null;
@@ -45,6 +49,7 @@ class TestSocket {
       joined: false,
       joinedAt: Date.now(),
       lastSeq: -1,
+      locationSharingLevel: 'hidden',
       presence: 'available',
       processedRequestIds: [],
       roomExpiresAt: null,
@@ -133,7 +138,7 @@ describe('RoomDurableObject realtime semantics', () => {
     expect(bob.messages.some((message) => message.type === 'member.location')).toBe(false);
     expect((alice.messages.at(-1)?.payload as Record<string, unknown>).status).toBe('ignored');
     await room.webSocketMessage(alice as unknown as WebSocket, clientMessage('presence.update', 'share-a', {
-      status: 'available', sharingLocation: true,
+      status: 'available', sharingLocation: true, locationSharingLevel: 'precise',
     }));
     alice.messages.length = 0;
     bob.messages.length = 0;
@@ -165,6 +170,78 @@ describe('RoomDurableObject realtime semantics', () => {
     }));
     expect(alice.messages.at(-1)).toMatchObject({ type: 'room.error', payload: { code: 'LOCATION_KIND_NOT_ALLOWED' } });
     expect(bob.messages.some((message) => message.type === 'member.location')).toBe(false);
+  });
+
+  it('broadcasts stable approximate locations without exact coordinates or motion details', async () => {
+    await room.webSocketMessage(alice as unknown as WebSocket, clientMessage('presence.update', 'share-approximate', {
+      status: 'available', sharingLocation: true, locationSharingLevel: 'approximate',
+    }));
+    bob.messages.length = 0;
+    const exact = {
+      seq: 4, longitude: 121.501_234, latitude: 31.282_345, accuracy: 8,
+      altitude: 12, heading: 90, speed: 1.2, kind: 'gps',
+    };
+    await room.webSocketMessage(alice as unknown as WebSocket, clientMessage('location.update', 'approximate-1', exact));
+    const first = bob.messages.find((message) => message.type === 'member.location');
+    const firstLocation = (first?.payload as { location: Record<string, unknown> }).location;
+    expect(firstLocation.longitude).not.toBe(exact.longitude);
+    expect(firstLocation.latitude).not.toBe(exact.latitude);
+    expect(firstLocation.accuracy).toBe(80);
+    expect(firstLocation).not.toHaveProperty('altitude');
+    expect(firstLocation).not.toHaveProperty('heading');
+    expect(firstLocation).not.toHaveProperty('speed');
+
+    bob.messages.length = 0;
+    await room.webSocketMessage(alice as unknown as WebSocket, clientMessage('location.update', 'approximate-2', { ...exact, seq: 5 }));
+    const second = bob.messages.find((message) => message.type === 'member.location');
+    const secondLocation = (second?.payload as { location: Record<string, unknown> }).location;
+    expect(secondLocation.longitude).toBe(firstLocation.longitude);
+    expect(secondLocation.latitude).toBe(firstLocation.latitude);
+  });
+
+  it('defaults legacy sharing requests and attachments to approximate locations', async () => {
+    await room.webSocketMessage(alice as unknown as WebSocket, clientMessage('presence.update', 'legacy-share', {
+      status: 'available', sharingLocation: true,
+    }));
+    bob.messages.length = 0;
+    await room.webSocketMessage(alice as unknown as WebSocket, clientMessage('location.update', 'legacy-location', {
+      seq: 7, longitude: 121.501_234, latitude: 31.282_345, accuracy: 8, kind: 'gps',
+    }));
+    const location = (bob.messages.find((message) => message.type === 'member.location')?.payload as {
+      location: Record<string, unknown>;
+    }).location;
+    expect(location.longitude).not.toBe(121.501_234);
+    expect(location.latitude).not.toBe(31.282_345);
+    expect(location.accuracy).toBe(80);
+
+    const legacy = new TestSocket('legacy');
+    legacy.attachment.joined = true;
+    legacy.attachment.sharingLocation = true;
+    legacy.attachment.lastLocation = {
+      seq: 1, longitude: 121.509_876, latitude: 31.289_876, accuracy: 5, kind: 'gps',
+    };
+    delete (legacy.attachment as Partial<TestAttachment>).locationSharingLevel;
+    state.sockets.push(legacy);
+    await room.webSocketMessage(legacy as unknown as WebSocket, clientMessage('ping', 'legacy-ping', {}));
+    expect(legacy.attachment.locationSharingLevel).toBe('approximate');
+    expect(legacy.attachment.lastLocation?.longitude).not.toBe(121.509_876);
+    expect(legacy.attachment.lastLocation?.accuracy).toBe(80);
+  });
+
+  it('keeps another active socket for the same user visible when one socket closes', async () => {
+    const secondAlice = new TestSocket('alice');
+    state.sockets.push(secondAlice);
+    await room.webSocketMessage(secondAlice as unknown as WebSocket, clientMessage('room.join', 'join-a-second', {}));
+    await room.webSocketMessage(secondAlice as unknown as WebSocket, clientMessage('presence.update', 'share-a-second', {
+      status: 'available', sharingLocation: true, locationSharingLevel: 'approximate',
+    }));
+    bob.messages.length = 0;
+
+    await room.webSocketClose(alice as unknown as WebSocket);
+
+    expect(bob.messages.some((message) => message.type === 'member.presence')).toBe(false);
+    expect(secondAlice.attachment.sharingLocation).toBe(true);
+    expect(state.values.get('departures')).toBeUndefined();
   });
 
   it('stops sharing immediately and emits member.left after the disconnect grace alarm', async () => {

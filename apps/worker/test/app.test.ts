@@ -143,6 +143,30 @@ describe('worker application', () => {
     expect(response.status).toBe(413);
   });
 
+  it('accepts only allowlisted client telemetry without payloads or coordinates', async () => {
+    const accepted = await createApp().request(
+      '/api/telemetry',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ event: 'web.long-task', result: 'recovered', durationMs: 120 }),
+      },
+      bindings,
+    );
+    expect(accepted.status).toBe(202);
+
+    const rejected = await createApp().request(
+      '/api/telemetry',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ event: 'web.crash', result: 'error', longitude: 121.5, latitude: 31.28 }),
+      },
+      bindings,
+    );
+    expect(rejected.status).toBe(400);
+  });
+
   it('returns 401 without authentication and 403 for a regular user', async () => {
     const unauthenticated = await createApp().request('/api/admin/submissions', {}, bindings);
     expect(unauthenticated.status).toBe(401);

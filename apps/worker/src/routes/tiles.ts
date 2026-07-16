@@ -3,6 +3,7 @@ import { Hono } from 'hono';
 import type { WorkerEnv } from '../types';
 import { readPmtilesVectorTile } from '../services/pmtiles';
 import { serveR2Object } from '../services/r2';
+import { observe } from '../observability';
 
 export const tilesRouter = new Hono<WorkerEnv>();
 
@@ -22,14 +23,33 @@ tilesRouter.get('/campus/:z/:x/:y.pbf', async (context) => {
   ) {
     return context.notFound();
   }
-  const tile = await readPmtilesVectorTile(context.env.TILES, 'tongji.pmtiles', z, x, y);
-  if (!tile) return context.notFound();
-  return new Response(tile.data, {
-    headers: {
-      'Cache-Control': tile.cacheControl ?? 'public, max-age=86400, stale-while-revalidate=604800',
-      'Content-Type': 'application/vnd.mapbox-vector-tile',
-    },
-  });
+  const startedAt = performance.now();
+  try {
+    const tile = await readPmtilesVectorTile(context.env.TILES, 'tongji.pmtiles', z, x, y);
+    observe({
+      event: 'pmtiles.request',
+      result: tile ? 'ok' : 'rejected',
+      durationMs: performance.now() - startedAt,
+      status: tile ? 200 : 404,
+      route: '/tiles/campus/:z/:x/:y.pbf',
+    });
+    if (!tile) return context.notFound();
+    return new Response(tile.data, {
+      headers: {
+        'Cache-Control': tile.cacheControl ?? 'public, max-age=86400, stale-while-revalidate=604800',
+        'Content-Type': 'application/vnd.mapbox-vector-tile',
+      },
+    });
+  } catch (error) {
+    observe({
+      event: 'pmtiles.request',
+      result: 'error',
+      durationMs: performance.now() - startedAt,
+      status: 500,
+      route: '/tiles/campus/:z/:x/:y.pbf',
+    });
+    throw error;
+  }
 });
 
 tilesRouter.get('/*', (context) => {

@@ -29,8 +29,16 @@ export function RoomSharingPanel({ realtime, roomId }: { realtime: RoomRealtimeS
       <dl className="sharing-facts">
         <div><dt>共享状态</dt><dd>{sharing ? '正在共享' : realtime.device.paused ? '已暂停' : '未共享'}</dd></div>
         <div><dt>共享对象</dt><dd>仅当前房间成员</dd></div>
-        <div><dt>定位精度</dt><dd>{realtime.device.location ? `±${Math.round(realtime.device.location.accuracy)} 米` : '等待定位'}</dd></div>
+        <div><dt>共享级别</dt><dd>{realtime.locationSharingLevel === 'precise' ? '精确位置' : realtime.locationSharingLevel === 'approximate' ? '模糊区域（约 80 米）' : '隐藏'}</dd></div>
       </dl>
+      <label className="setting-row">
+        <span><strong>房间共享精度</strong><small>模糊模式由服务端网格化，其他成员不会收到精确坐标</small></span>
+        <select value={realtime.locationSharingLevel} disabled={sharing} onChange={(event) => realtime.setLocationSharingLevel(event.target.value as 'precise' | 'approximate' | 'hidden')}>
+          <option value="approximate">模糊（推荐）</option>
+          <option value="precise">精确</option>
+          <option value="hidden">隐藏</option>
+        </select>
+      </label>
       {realtime.device.error || realtime.error ? <p className="sharing-error" role="alert">{realtime.device.error ?? realtime.error}</p> : null}
       <form className="sharing-token" onSubmit={(event) => { event.preventDefault(); realtime.configureAccessToken(accessToken); }}>
         <KeyRound size={13} aria-hidden="true" />
@@ -38,7 +46,7 @@ export function RoomSharingPanel({ realtime, roomId }: { realtime: RoomRealtimeS
         <button type="submit">连接</button>
       </form>
       <div className="sharing-actions">
-        {!sharing ? <Button onClick={realtime.startSharing} disabled={realtime.connectionStatus === 'expired'}><CirclePlay size={15} />{realtime.device.paused ? '继续共享' : '开始共享'}</Button> : <Button variant="secondary" onClick={realtime.pauseSharing}><CirclePause size={15} />暂停</Button>}
+        {!sharing ? <Button onClick={realtime.startSharing} disabled={realtime.connectionStatus === 'expired' || realtime.locationSharingLevel === 'hidden'}><CirclePlay size={15} />{realtime.device.paused ? '继续共享' : '开始共享'}</Button> : <Button variant="secondary" onClick={realtime.pauseSharing}><CirclePause size={15} />暂停</Button>}
         <Button variant="ghost" onClick={realtime.stopSharing} disabled={!realtime.device.location && !realtime.device.paused}><Square size={14} />停止</Button>
       </div>
     </section>

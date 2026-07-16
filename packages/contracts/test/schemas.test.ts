@@ -116,6 +116,32 @@ describe('locationUpdateSchema', () => {
     expect(clientMessageSchema.safeParse({ ...messages[0], unexpected: true }).success).toBe(false);
   });
 
+  it('accepts only explicit location sharing levels', () => {
+    for (const locationSharingLevel of ['precise', 'approximate', 'hidden']) {
+      expect(clientMessageSchema.safeParse({
+        type: 'presence.update',
+        requestId: `presence-${locationSharingLevel}`,
+        sentAt: 2,
+        payload: {
+          status: 'available',
+          sharingLocation: locationSharingLevel !== 'hidden',
+          locationSharingLevel,
+        },
+      }).success).toBe(true);
+    }
+
+    expect(clientMessageSchema.safeParse({
+      type: 'presence.update',
+      requestId: 'presence-invalid',
+      sentAt: 2,
+      payload: {
+        status: 'available',
+        sharingLocation: true,
+        locationSharingLevel: 'building',
+      },
+    }).success).toBe(false);
+  });
+
   it('validates snapshots and acknowledgements from the room server', () => {
     expect(serverMessageSchema.safeParse({
       type: 'room.snapshot', eventId: 'event-1', sequence: 1, sentAt: 10,

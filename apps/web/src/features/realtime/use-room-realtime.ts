@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { apiRequest } from '../../lib/api';
 import { useRealtimeStore } from '../../stores/realtime-store';
+import { usePrivacyStore } from '../../stores/privacy-store';
 import { shouldSendLocation, type SentLocation } from './location-policy';
 import { RoomRealtimeClient } from './realtime-client';
 import { useDeviceLocation } from './use-device-location';
@@ -28,6 +29,8 @@ export function useRoomRealtime(roomId: string | undefined) {
   const errorRequestId = useRealtimeStore((state) => state.errorRequestId);
   const pins = useRealtimeStore((state) => state.pins);
   const setPins = useRealtimeStore((state) => state.setPins);
+  const locationSharingLevel = usePrivacyStore((state) => state.locationSharingLevel);
+  const setLocationSharingLevel = usePrivacyStore((state) => state.setLocationSharingLevel);
 
   const refreshPins = useCallback(async () => {
     if (!roomId) return;
@@ -99,16 +102,16 @@ export function useRoomRealtime(roomId: string | undefined) {
 
   const startSharing = useCallback(() => {
     device.start();
-    clientRef.current?.updatePresence('available', true);
-  }, [device.start]);
+    clientRef.current?.updatePresence('available', locationSharingLevel);
+  }, [device.start, locationSharingLevel]);
   const pauseSharing = useCallback(() => {
     device.pause();
-    clientRef.current?.updatePresence('away', false);
+    clientRef.current?.updatePresence('away', 'hidden');
   }, [device.pause]);
   const stopSharing = useCallback(() => {
     device.stop();
     lastSentRef.current = null;
-    clientRef.current?.updatePresence('available', false);
+    clientRef.current?.updatePresence('available', 'hidden');
   }, [device.stop]);
   const configureAccessToken = useCallback((token: string) => {
     const normalized = token.trim();
@@ -139,10 +142,12 @@ export function useRoomRealtime(roomId: string | undefined) {
     errorCode,
     errorRequestId,
     members: Object.values(members),
+    locationSharingLevel,
     pauseSharing,
     pinLoadError,
     pins: Object.values(pins),
     refreshPins,
+    setLocationSharingLevel,
     startSharing,
     stopSharing,
     updatePin,

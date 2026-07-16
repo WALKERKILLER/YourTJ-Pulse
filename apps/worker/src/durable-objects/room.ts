@@ -5,6 +5,7 @@ import {
   isWebSocketMessageWithinLimit,
   type AuthenticatedUser,
   type ClientMessage,
+  type LocationSharingLevel,
   type PresenceStatus,
   type RealtimeLocation,
   type RealtimeMember,
@@ -13,6 +14,8 @@ import {
 import { z } from 'zod';
 
 import { createPin, deletePin, getPin, updatePin } from '../repositories/business';
+import { bucketAccuracy, hashIdentifier, observe, type ObservationResult } from '../observability';
+import { applyLocationPrivacy } from '../realtime/location-privacy';
 import type { PinRecord } from '../repositories/business';
 import type { WorkerBindings } from '../types';
 import { ApiError } from '../utils/responses';
@@ -37,6 +40,7 @@ interface SocketAttachment {
   lastLocation?: RealtimeLocation;
   lastLocationAt?: number;
   lastSeq: number;
+  locationSharingLevel: LocationSharingLevel;
   presence: PresenceStatus;
   processedRequestIds: string[];
   roomExpiresAt: string | null;
@@ -45,6 +49,7 @@ interface SocketAttachment {
   sharingLocation: boolean;
   updatedAt: number;
   user: AuthenticatedUser;
+  userHash: string;
   userId: string;
 }
 
@@ -74,7 +79,19 @@ function decodeBase64Url(value: string): string | undefined {
 }
 
 function attachment(ws: WebSocket): SocketAttachment | undefined {
-  return ws.deserializeAttachment() as SocketAttachment | undefined;
+  const current = ws.deserializeAttachment() as SocketAttachment | undefined;
+  if (!current || current.locationSharingLevel) return current;
+  current.locationSharingLevel = current.sharingLocation ? 'approximate' : 'hidden';
+  if (current.lastLocation && current.locationSharingLevel === 'approximate') {
+    const approximateLocation = applyLocationPrivacy(
+      current.lastLocation,
+      'approximate',
+      `${current.roomId}:${current.userId}`,
+    );
+    if (approximateLocation) current.lastLocation = approximateLocation;
+  }
+  ws.serializeAttachment(current);
+  return current;
 }
 
 function connectionStatus(updatedAt: number, timestamp: number): RealtimeMember['connectionStatus'] {
@@ -115,12 +132,14 @@ export class RoomDurableObject {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair) as [WebSocket, WebSocket];
     const timestamp = Date.now();
+    const userHash = await hashIdentifier(`${roomId}:${identity.data.user.id}`);
     const socketAttachment: SocketAttachment = {
       ...(identity.data.user.avatarUrl ? { avatarUrl: identity.data.user.avatarUrl } : {}),
       displayName: identity.data.user.displayName,
       joined: false,
       joinedAt: timestamp,
       lastSeq: -1,
+      locationSharingLevel: 'hidden',
       presence: 'available',
       processedRequestIds: [],
       roomExpiresAt,
@@ -129,6 +148,7 @@ export class RoomDurableObject {
       sharingLocation: false,
       updatedAt: timestamp,
       user: identity.data.user,
+      userHash,
       userId: identity.data.user.id,
     };
     server.serializeAttachment(socketAttachment);
@@ -136,6 +156,14 @@ export class RoomDurableObject {
     if (roomExpiresAt) await this.state.storage.put('roomExpiresAt', roomExpiresAt);
     await this.clearDeparture(identity.data.user.id);
     await this.scheduleNextAlarm();
+    observe({
+      event: 'realtime.connection',
+      result: 'ok',
+      roomId,
+      userHash,
+      messageType: 'connected',
+      memberCount: this.members(timestamp).length,
+    });
     return new Response(null, {
       status: 101,
       webSocket: client,
@@ -144,17 +172,22 @@ export class RoomDurableObject {
   }
 
   async webSocketMessage(ws: WebSocket, rawMessage: string | ArrayBuffer): Promise<void> {
+    const startedAt = performance.now();
     const current = attachment(ws);
     if (!current) {
+      observe({ event: 'realtime.message', result: 'rejected', messageType: 'protocol.missing-attachment' });
       ws.close(PROTOCOL_ERROR_CLOSE_CODE, 'Missing socket attachment');
       return;
     }
+    current.userHash ??= await hashIdentifier(`${current.roomId}:${current.userId}`);
     if (!isWebSocketMessageWithinLimit(rawMessage)) {
+      await this.observeRealtime(current, 'protocol.too-large', 'rejected', startedAt);
       this.sendError(ws, 'MESSAGE_TOO_LARGE', `Messages are limited to ${API_LIMITS.webSocketMessageBytes} bytes`, false);
       ws.close(PROTOCOL_ERROR_CLOSE_CODE, 'Message too large');
       return;
     }
     if (this.expired(current)) {
+      await this.observeRealtime(current, 'protocol.expired', 'rejected', startedAt);
       this.sendError(ws, current.sessionExpiresAt && current.sessionExpiresAt <= new Date().toISOString() ? 'SESSION_EXPIRED' : 'ROOM_EXPIRED', 'Realtime session is no longer active', false);
       ws.close(current.sessionExpiresAt && current.sessionExpiresAt <= new Date().toISOString() ? SESSION_EXPIRED_CLOSE_CODE : ROOM_EXPIRED_CLOSE_CODE, 'Realtime session expired');
       return;
@@ -164,21 +197,25 @@ export class RoomDurableObject {
     try {
       decoded = JSON.parse(typeof rawMessage === 'string' ? rawMessage : new TextDecoder().decode(rawMessage));
     } catch {
+      await this.observeRealtime(current, 'protocol.invalid-json', 'rejected', startedAt);
       this.sendError(ws, 'INVALID_JSON', 'Message must be valid JSON', false);
       ws.close(PROTOCOL_ERROR_CLOSE_CODE, 'Invalid JSON');
       return;
     }
     const parsed = clientMessageSchema.safeParse(decoded);
     if (!parsed.success) {
+      await this.observeRealtime(current, 'protocol.invalid-message', 'rejected', startedAt);
       this.sendError(ws, 'INVALID_MESSAGE', 'Message failed realtime protocol validation', false);
       return;
     }
     const message = parsed.data;
     if (current.processedRequestIds.includes(message.requestId)) {
+      await this.observeRealtime(current, message.type, 'ok', startedAt, message.type === 'location.update' ? message.payload.accuracy : undefined);
       this.sendAck(ws, message, 'duplicate');
       return;
     }
     if (!current.joined && message.type !== 'room.join') {
+      await this.observeRealtime(current, message.type, 'rejected', startedAt, message.type === 'location.update' ? message.payload.accuracy : undefined);
       this.sendError(ws, 'ROOM_JOIN_REQUIRED', 'Send room.join before other messages', true, message.requestId);
       return;
     }
@@ -187,22 +224,47 @@ export class RoomDurableObject {
       await this.handleMessage(ws, current, message);
       current.processedRequestIds = [...current.processedRequestIds.slice(-99), message.requestId];
       ws.serializeAttachment(current);
+      await this.observeRealtime(current, message.type, 'ok', startedAt, message.type === 'location.update' ? message.payload.accuracy : undefined);
     } catch (error) {
       const apiError = error instanceof ApiError ? error : undefined;
       const retryable = !apiError || apiError.status >= 500 || apiError.code === 'REQUEST_IN_PROGRESS';
       this.sendError(ws, apiError?.code ?? 'REALTIME_INTERNAL_ERROR', apiError?.message ?? 'Realtime message failed', retryable, message.requestId);
+      await this.observeRealtime(current, message.type, apiError && apiError.status < 500 ? 'rejected' : 'error', startedAt, message.type === 'location.update' ? message.payload.accuracy : undefined);
     }
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
     const current = attachment(ws);
     if (!current?.joined) return;
+    current.userHash ??= await hashIdentifier(`${current.roomId}:${current.userId}`);
+    current.joined = false;
+    current.sharingLocation = false;
+    current.locationSharingLevel = 'hidden';
+    current.updatedAt = Date.now();
+    delete current.lastLocation;
+    delete current.lastLocationAt;
+    ws.serializeAttachment(current);
+    observe({
+      event: 'realtime.connection',
+      result: 'ok',
+      roomId: current.roomId,
+      userHash: current.userHash,
+      messageType: 'disconnected',
+      memberCount: this.members(current.updatedAt).length,
+    });
     const storedLastSeq = await this.state.storage.get<number>(`lastSeq:${current.userId}`) ?? -1;
     const activeLastSeq = Math.max(...this.state.getWebSockets(`user:${current.userId}`)
       .map((socket) => attachment(socket)?.lastSeq ?? -1));
     await this.state.storage.put(`lastSeq:${current.userId}`, Math.max(storedLastSeq, activeLastSeq, current.lastSeq));
     const hasOtherSocket = this.state.getWebSockets(`user:${current.userId}`).some((candidate) => candidate !== ws && attachment(candidate)?.joined);
     if (hasOtherSocket) return;
+    this.broadcast('member.presence', {
+      userId: current.userId,
+      presence: current.presence,
+      sharingLocation: false,
+      locationSharingLevel: 'hidden',
+      updatedAt: current.updatedAt,
+    }, undefined, ws);
     const departures = await this.departures();
     departures[current.userId] = { userId: current.userId, deadline: Date.now() + DISCONNECT_GRACE_MS };
     await this.state.storage.put('departures', departures);
@@ -274,21 +336,39 @@ export class RoomDurableObject {
           this.sendAck(ws, message, 'ignored');
           return;
         }
-        current.lastLocation = message.payload;
+        const sharedLocation = applyLocationPrivacy(
+          message.payload,
+          current.locationSharingLevel,
+          `${current.roomId}:${current.userId}`,
+        );
+        if (!sharedLocation) {
+          this.sendAck(ws, message, 'ignored');
+          return;
+        }
+        current.lastLocation = sharedLocation;
         current.lastLocationAt = timestamp;
-        this.broadcast('member.location', { userId: current.userId, location: message.payload, receivedAt: timestamp }, message.requestId);
+        this.broadcast('member.location', { userId: current.userId, location: sharedLocation, receivedAt: timestamp }, message.requestId);
         this.sendAck(ws, message, 'accepted');
         return;
       }
       case 'presence.update': {
         current.presence = message.payload.status;
-        current.sharingLocation = message.payload.sharingLocation;
+        current.locationSharingLevel = message.payload.sharingLocation
+          ? message.payload.locationSharingLevel ?? 'approximate'
+          : 'hidden';
+        current.sharingLocation = current.locationSharingLevel !== 'hidden';
         current.updatedAt = timestamp;
         if (!current.sharingLocation) {
           delete current.lastLocation;
           delete current.lastLocationAt;
         }
-        this.broadcast('member.presence', { userId: current.userId, presence: current.presence, sharingLocation: current.sharingLocation, updatedAt: timestamp }, message.requestId);
+        this.broadcast('member.presence', {
+          userId: current.userId,
+          presence: current.presence,
+          sharingLocation: current.sharingLocation,
+          locationSharingLevel: current.locationSharingLevel,
+          updatedAt: timestamp,
+        }, message.requestId);
         this.sendAck(ws, message, 'accepted');
         return;
       }
@@ -402,12 +482,15 @@ export class RoomDurableObject {
 
   private member(current: SocketAttachment, timestamp: number): RealtimeMember {
     const memberUpdatedAt = current.lastLocationAt ?? current.updatedAt;
+    const locationSharingLevel = current.locationSharingLevel
+      ?? (current.sharingLocation ? 'precise' : 'hidden');
     return {
       userId: current.userId,
       displayName: current.displayName,
       ...(current.avatarUrl ? { avatarUrl: current.avatarUrl } : {}),
       presence: current.presence,
       sharingLocation: current.sharingLocation,
+      locationSharingLevel,
       connectionStatus: connectionStatus(memberUpdatedAt, timestamp),
       joinedAt: current.joinedAt,
       updatedAt: memberUpdatedAt,
@@ -480,5 +563,24 @@ export class RoomDurableObject {
     const deadline = Math.min(roomDeadline, departureDeadline, sessionDeadline);
     if (Number.isFinite(deadline)) await this.state.storage.setAlarm(Math.max(Date.now(), deadline));
     else await this.state.storage.deleteAlarm();
+  }
+
+  private async observeRealtime(
+    current: SocketAttachment,
+    messageType: string,
+    result: ObservationResult,
+    startedAt: number,
+    accuracy?: number,
+  ): Promise<void> {
+    observe({
+      event: 'realtime.message',
+      result,
+      durationMs: performance.now() - startedAt,
+      roomId: current.roomId,
+      userHash: current.userHash,
+      messageType,
+      ...(accuracy === undefined ? {} : { accuracyBucket: bucketAccuracy(accuracy) }),
+      memberCount: this.members(Date.now()).length,
+    });
   }
 }

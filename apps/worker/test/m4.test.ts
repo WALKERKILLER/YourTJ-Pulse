@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createApp } from '../src';
-import { claimSubmissionReview } from '../src/repositories/business';
+import { claimSubmissionReview, cleanupExpiredCollaborationData } from '../src/repositories/business';
 import type { WorkerBindings } from '../src/types';
 import { createTestDatabase, type TestDatabase } from './sqlite-d1';
 
@@ -147,6 +147,29 @@ describe('M4 D1 business API', () => {
       method: 'POST', body: JSON.stringify({ content: '不应写入' }),
     })).status).toBe(410);
     expect((await request(database.binding, `/api/pins/${pin.id}`, memberToken, { method: 'DELETE' })).status).toBe(200);
+  });
+
+  it('purges expired collaboration data while retaining audit records', async () => {
+    const room = await data<{ id: string }>(await request(database.binding, '/api/rooms', ownerToken, {
+      method: 'POST', body: JSON.stringify({ name: '待清理房间', visibility: 'public', expiresAt: '2099-01-01T00:00:00.000Z' }),
+    }));
+    const pin = await data<{ id: string }>(await request(database.binding, '/api/pins', memberToken, {
+      method: 'POST', body: JSON.stringify({ type: 'task', title: '待清理点', longitude: 121.5, latitude: 31.28, visibility: 'private', expiresAt: '2099-01-01T00:00:00.000Z' }),
+    }));
+    const roomPin = await data<{ id: string }>(await request(database.binding, '/api/pins', ownerToken, {
+      method: 'POST', body: JSON.stringify({ roomId: room.id, type: 'meeting', title: '随房间清理', longitude: 121.5, latitude: 31.28, visibility: 'room' }),
+    }));
+    await database.binding.prepare("UPDATE rooms SET expires_at = '2020-01-01T00:00:00.000Z' WHERE id = ?").bind(room.id).run();
+    await database.binding.prepare("UPDATE pins SET expires_at = '2020-01-01T00:00:00.000Z' WHERE id = ?").bind(pin.id).run();
+
+    expect(await cleanupExpiredCollaborationData(database.binding, '2026-07-17T00:00:00.000Z')).toEqual({
+      deletedPins: 1,
+      deletedRooms: 1,
+    });
+    expect(await database.binding.prepare('SELECT count(*) AS count FROM rooms WHERE id = ?').bind(room.id).first()).toEqual({ count: 0 });
+    expect(await database.binding.prepare('SELECT count(*) AS count FROM pins WHERE id = ?').bind(pin.id).first()).toEqual({ count: 0 });
+    expect(await database.binding.prepare('SELECT count(*) AS count FROM pins WHERE id = ?').bind(roomPin.id).first()).toEqual({ count: 0 });
+    expect(await database.binding.prepare("SELECT count(*) AS count FROM audit_logs WHERE action IN ('room.create', 'pin.create')").first<{ count: number }>()).toEqual({ count: 3 });
   });
 
   it('persists collaborative pins, comments, optimistic versions, and audits', async () => {

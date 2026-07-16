@@ -165,6 +165,14 @@
                 },
                 "sharingLocation": {
                   "type": "boolean"
+                },
+                "locationSharingLevel": {
+                  "type": "string",
+                  "enum": [
+                    "precise",
+                    "approximate",
+                    "hidden"
+                  ]
                 }
               },
               "required": [
@@ -599,6 +607,14 @@
                       "sharingLocation": {
                         "type": "boolean"
                       },
+                      "locationSharingLevel": {
+                        "type": "string",
+                        "enum": [
+                          "precise",
+                          "approximate",
+                          "hidden"
+                        ]
+                      },
                       "connectionStatus": {
                         "type": "string",
                         "enum": [
@@ -680,6 +696,7 @@
                       "displayName",
                       "presence",
                       "sharingLocation",
+                      "locationSharingLevel",
                       "connectionStatus",
                       "joinedAt",
                       "updatedAt"
@@ -762,6 +779,14 @@
                     "sharingLocation": {
                       "type": "boolean"
                     },
+                    "locationSharingLevel": {
+                      "type": "string",
+                      "enum": [
+                        "precise",
+                        "approximate",
+                        "hidden"
+                      ]
+                    },
                     "connectionStatus": {
                       "type": "string",
                       "enum": [
@@ -843,6 +868,7 @@
                     "displayName",
                     "presence",
                     "sharingLocation",
+                    "locationSharingLevel",
                     "connectionStatus",
                     "joinedAt",
                     "updatedAt"
@@ -1082,6 +1108,14 @@
                 "sharingLocation": {
                   "type": "boolean"
                 },
+                "locationSharingLevel": {
+                  "type": "string",
+                  "enum": [
+                    "precise",
+                    "approximate",
+                    "hidden"
+                  ]
+                },
                 "updatedAt": {
                   "type": "integer",
                   "minimum": 0,
@@ -1092,6 +1126,7 @@
                 "userId",
                 "presence",
                 "sharingLocation",
+                "locationSharingLevel",
                 "updatedAt"
               ],
               "additionalProperties": false

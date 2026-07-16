@@ -1,9 +1,23 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'bootstrap/campus_bootstrap.dart';
+import 'observability/client_telemetry.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  final previousFlutterError = FlutterError.onError;
+  FlutterError.onError = (details) {
+    ClientTelemetry.reportFlutterError(details);
+    (previousFlutterError ?? FlutterError.presentError)(details);
+  };
+  PlatformDispatcher.instance.onError = (error, stack) {
+    ClientTelemetry.report('flutter.error');
+    return false;
+  };
+  WidgetsBinding.instance.addTimingsCallback(ClientTelemetry.reportFrameTimings);
   runApp(const ProviderScope(child: YourTJPulseApp()));
 }
 
