@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useRef } from 'react';
+import type { CreatePinInput, RealtimePin, UpdatePinInput } from '@yourtj/contracts';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
+import { apiRequest } from '../../lib/api';
 import { useRealtimeStore } from '../../stores/realtime-store';
 import { shouldSendLocation, type SentLocation } from './location-policy';
 import { RoomRealtimeClient } from './realtime-client';
@@ -9,6 +11,10 @@ export function useRoomRealtime(roomId: string | undefined) {
   const device = useDeviceLocation();
   const clientRef = useRef<RoomRealtimeClient | null>(null);
   const accessTokenRef = useRef('');
+  const activeRoomRef = useRef(roomId);
+  activeRoomRef.current = roomId;
+  const [accessToken, setAccessToken] = useState('');
+  const [pinLoadError, setPinLoadError] = useState<string | null>(null);
   const sequenceRef = useRef(0);
   const lastSentRef = useRef<SentLocation | null>(null);
   const applyMessage = useRealtimeStore((state) => state.applyMessage);
@@ -18,6 +24,26 @@ export function useRoomRealtime(roomId: string | undefined) {
   const connectionStatus = useRealtimeStore((state) => state.connectionStatus);
   const members = useRealtimeStore((state) => state.members);
   const error = useRealtimeStore((state) => state.error);
+  const errorCode = useRealtimeStore((state) => state.errorCode);
+  const errorRequestId = useRealtimeStore((state) => state.errorRequestId);
+  const pins = useRealtimeStore((state) => state.pins);
+  const setPins = useRealtimeStore((state) => state.setPins);
+
+  const refreshPins = useCallback(async () => {
+    if (!roomId) return;
+    try {
+      const records = await apiRequest<RealtimePin[]>(
+        `/api/pins?roomId=${encodeURIComponent(roomId)}`,
+        accessToken || undefined,
+      );
+      if (activeRoomRef.current !== roomId) return;
+      setPins(records);
+      setPinLoadError(null);
+    } catch (requestError) {
+      if (activeRoomRef.current !== roomId) return;
+      setPinLoadError(requestError instanceof Error ? requestError.message : '无法加载协作 Pin');
+    }
+  }, [accessToken, roomId, setPins]);
 
   useEffect(() => {
     reset();
@@ -36,6 +62,10 @@ export function useRoomRealtime(roomId: string | undefined) {
       device.stop();
     };
   }, [applyMessage, device.stop, reset, roomId, setConnectionStatus]);
+
+  useEffect(() => {
+    void refreshPins();
+  }, [refreshPins]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -81,9 +111,16 @@ export function useRoomRealtime(roomId: string | undefined) {
     clientRef.current?.updatePresence('available', false);
   }, [device.stop]);
   const configureAccessToken = useCallback((token: string) => {
-    accessTokenRef.current = token.trim();
+    const normalized = token.trim();
+    accessTokenRef.current = normalized;
+    setAccessToken(normalized);
     clientRef.current?.reconnect();
   }, []);
+  const createPin = useCallback((pin: CreatePinInput) => clientRef.current?.createPin(pin) ?? null, []);
+  const deletePin = useCallback((pinId: string, expectedVersion: number) =>
+    clientRef.current?.deletePin(pinId, expectedVersion) ?? null, []);
+  const updatePin = useCallback((pinId: string, update: UpdatePinInput) =>
+    clientRef.current?.updatePin(pinId, update) ?? null, []);
 
   useEffect(() => {
     if (connectionStatus !== 'expired') return;
@@ -92,13 +129,22 @@ export function useRoomRealtime(roomId: string | undefined) {
   }, [connectionStatus, device.stop]);
 
   return {
+    accessToken,
     connectionStatus,
     configureAccessToken,
+    createPin,
+    deletePin,
     device,
     error,
+    errorCode,
+    errorRequestId,
     members: Object.values(members),
     pauseSharing,
+    pinLoadError,
+    pins: Object.values(pins),
+    refreshPins,
     startSharing,
     stopSharing,
+    updatePin,
   };
 }

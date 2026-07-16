@@ -1,6 +1,8 @@
 import {
   createPinCommentSchema,
+  createPinReportSchema,
   createPinSchema,
+  pinReportStatusSchema,
   pinStatusSchema,
   pinVisibilitySchema,
   updatePinSchema,
@@ -12,10 +14,14 @@ import { authenticate } from '../auth/middleware';
 import {
   createPin,
   createPinComment,
+  createPinReport,
   deletePin,
   getPin,
   listPinComments,
+  listPinActivity,
+  listPinReports,
   listPins,
+  resolvePinReport,
   updatePin,
 } from '../repositories/business';
 import type { WorkerEnv } from '../types';
@@ -45,12 +51,37 @@ pinsRouter.patch('/:id', async (context) => {
   return jsonData(context, await updatePin(context.env.DB, identifierParam(context), context.get('user'), input));
 });
 pinsRouter.delete('/:id', async (context) => {
-  await deletePin(context.env.DB, identifierParam(context), context.get('user'));
-  return jsonData(context, { deleted: true });
+  const deleted = await deletePin(context.env.DB, identifierParam(context), context.get('user'));
+  return jsonData(context, { deleted: true, ...deleted });
 });
 pinsRouter.get('/:id/comments', async (context) =>
   jsonData(context, await listPinComments(context.env.DB, identifierParam(context), context.get('user'))));
 pinsRouter.post('/:id/comments', async (context) => {
   const input = await parseJsonBody(context.req.raw, createPinCommentSchema);
   return jsonData(context, await createPinComment(context.env.DB, identifierParam(context), context.get('user'), input), 201);
+});
+pinsRouter.get('/:id/activity', async (context) =>
+  jsonData(context, await listPinActivity(context.env.DB, identifierParam(context), context.get('user'))));
+pinsRouter.get('/:id/reports', async (context) =>
+  jsonData(context, await listPinReports(context.env.DB, identifierParam(context), context.get('user'))));
+pinsRouter.post('/:id/reports', async (context) => {
+  const input = await parseJsonBody(context.req.raw, createPinReportSchema);
+  return jsonData(context, await createPinReport(
+    context.env.DB,
+    identifierParam(context),
+    context.get('user'),
+    input,
+  ), 201);
+});
+pinsRouter.patch('/:id/reports/:reportId', async (context) => {
+  const input = await parseJsonBody(context.req.raw, z.object({
+    status: pinReportStatusSchema.exclude(['pending']),
+  }).strict());
+  return jsonData(context, await resolvePinReport(
+    context.env.DB,
+    identifierParam(context),
+    identifierParam(context, 'reportId'),
+    context.get('user'),
+    input.status,
+  ));
 });

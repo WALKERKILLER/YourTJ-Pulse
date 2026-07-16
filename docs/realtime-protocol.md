@@ -17,6 +17,8 @@
 | `location.update` | 在显式开启共享后发送带单调 `seq` 的当前位置 | 未授权或旧 seq 不广播 |
 | `presence.update` | 显式开启、暂停位置共享或更新在线状态 | 按 `requestId` ACK |
 | `pin.create` | 在当前房间创建协作点 | D1 写入后广播，按 `requestId` 去重 |
+| `pin.update` | 以 `expectedVersion` 编辑当前房间的协作点 | 成功后广播；版本冲突返回 `PIN_VERSION_CONFLICT`，不覆盖新版本 |
+| `pin.delete` | 以 `expectedVersion` 软删除当前房间的协作点 | 成功后向所有成员广播 `pin.deleted` |
 | `ping` | 保活并确认最后收到的服务端 sequence | 按 `requestId` ACK |
 
 ## 服务端 → 客户端
@@ -27,7 +29,7 @@
 | `member.joined` / `member.left` | 成员连接状态变化 |
 | `member.location` | 已通过精度与 seq 校验的位置 |
 | `member.presence` | Presence 或共享开关变化 |
-| `pin.created` / `pin.updated` | 协作点事件 |
+| `pin.created` / `pin.updated` / `pin.deleted` | 协作点创建、版本更新或软删除事件 |
 | `room.ack` | 请求确认、重复或忽略状态 |
 | `room.error` | 可重试性明确的协议/房间错误 |
 

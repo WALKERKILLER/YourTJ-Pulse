@@ -2,9 +2,12 @@ import type {
   AuthenticatedUser,
   CreatePinCommentInput,
   CreatePinInput,
+  CreatePinReportInput,
   CreateRoomInput,
   CreateTwinEventInput,
   PinStatus,
+  PinReportReason,
+  PinReportStatus,
   PinVisibility,
   RoomMemberRole,
   RoomVisibility,
@@ -54,6 +57,28 @@ interface CommentRow {
   author_id: string;
   author_name: string;
   content: string;
+  created_at: string;
+}
+
+interface ReportRow {
+  id: string;
+  pin_id: string;
+  reporter_id: string;
+  reporter_name: string;
+  reason: PinReportReason;
+  detail: string | null;
+  status: PinReportStatus;
+  resolver_id: string | null;
+  created_at: string;
+  resolved_at: string | null;
+}
+
+interface AuditRow {
+  id: string;
+  actor_id: string | null;
+  actor_name: string | null;
+  action: string;
+  metadata_json: string | null;
   created_at: string;
 }
 
@@ -110,6 +135,10 @@ function now(): string {
 
 function elevated(user: AuthenticatedUser): boolean {
   return user.roles.includes('moderator') || user.roles.includes('admin');
+}
+
+export function hasElevatedRole(user: AuthenticatedUser): boolean {
+  return elevated(user);
 }
 
 function primaryRole(user: AuthenticatedUser): UserRole {
@@ -308,10 +337,62 @@ function canReadPin(row: PinRow, user: AuthenticatedUser): boolean {
     || (row.visibility === 'room' && Boolean(row.membership_role));
 }
 
+const GENERIC_PIN_STATES = new Set<PinStatus>(['draft', 'active', 'resolved', 'expired', 'deleted']);
+const REPAIR_PIN_STATES = new Set<PinStatus>([
+  'draft', 'reported', 'confirmed', 'processing', 'resolved', 'rejected', 'deleted',
+]);
+const GENERIC_TRANSITIONS: Partial<Record<PinStatus, readonly PinStatus[]>> = {
+  draft: ['active', 'deleted'],
+  active: ['resolved', 'expired', 'deleted'],
+  resolved: ['active', 'deleted'],
+  expired: ['deleted'],
+};
+const REPAIR_TRANSITIONS: Partial<Record<PinStatus, readonly PinStatus[]>> = {
+  draft: ['reported', 'deleted'],
+  reported: ['confirmed', 'rejected', 'deleted'],
+  confirmed: ['processing', 'rejected', 'deleted'],
+  processing: ['resolved', 'rejected', 'deleted'],
+  resolved: ['deleted'],
+  rejected: ['deleted'],
+};
+
+function assertPinState(type: CreatePinInput['type'], status: PinStatus): void {
+  const states = type === 'repair' ? REPAIR_PIN_STATES : GENERIC_PIN_STATES;
+  if (!states.has(status)) {
+    throw new ApiError(400, 'INVALID_PIN_STATE', `Status ${status} is not valid for pin type ${type}`);
+  }
+}
+
+function assertInitialPinState(type: CreatePinInput['type'], status: PinStatus): void {
+  const allowed = type === 'repair' ? ['draft', 'reported'] : ['draft', 'active'];
+  if (!allowed.includes(status)) {
+    throw new ApiError(400, 'INVALID_INITIAL_PIN_STATE', `A ${type} pin cannot be created with status ${status}`);
+  }
+}
+
+function assertStatusTransition(
+  currentType: CreatePinInput['type'],
+  currentStatus: PinStatus,
+  nextType: CreatePinInput['type'],
+  nextStatus: PinStatus,
+): void {
+  if (currentType !== nextType) {
+    if (currentStatus !== 'draft' || !['draft', 'active', 'reported'].includes(nextStatus)) {
+      throw new ApiError(409, 'INVALID_PIN_TRANSITION', 'Pin type can only change while the pin is a draft');
+    }
+    return;
+  }
+  if (currentStatus === nextStatus) return;
+  const allowed = (currentType === 'repair' ? REPAIR_TRANSITIONS : GENERIC_TRANSITIONS)[currentStatus] ?? [];
+  if (!allowed.includes(nextStatus)) {
+    throw new ApiError(409, 'INVALID_PIN_TRANSITION', `Cannot move ${currentType} pin from ${currentStatus} to ${nextStatus}`);
+  }
+}
+
 export async function getPin(db: D1Database, pinId: string, user: AuthenticatedUser): Promise<PinRecord> {
   const row = await pinRow(db, pinId, user.id);
-  if (!row) throw new ApiError(404, 'PIN_NOT_FOUND', 'Pin was not found');
-  if (pinExpired(row, now())) throw new ApiError(410, 'PIN_EXPIRED', 'Pin or its room has expired');
+  if (!row || row.status === 'deleted') throw new ApiError(404, 'PIN_NOT_FOUND', 'Pin was not found');
+  if (row.status === 'expired' || pinExpired(row, now())) throw new ApiError(410, 'PIN_EXPIRED', 'Pin or its room has expired');
   if (!canReadPin(row, user)) throw new ApiError(403, 'PIN_ACCESS_DENIED', 'This pin is not visible to the current user');
   return pinFromRow(row);
 }
@@ -325,6 +406,7 @@ export async function listPins(
   const conditions = [
     '(p.expires_at IS NULL OR p.expires_at > ?)',
     '(r.expires_at IS NULL OR r.expires_at > ?)',
+    "p.status <> 'deleted'",
   ];
   const values: Array<string> = [timestamp, timestamp];
   if (!elevated(user)) {
@@ -338,6 +420,8 @@ export async function listPins(
   if (filters.status) {
     conditions.push('p.status = ?');
     values.push(filters.status);
+  } else {
+    conditions.push("p.status <> 'expired'");
   }
   if (filters.visibility) {
     conditions.push('p.visibility = ?');
@@ -358,6 +442,8 @@ export async function createPin(db: D1Database, user: AuthenticatedUser, input: 
     const room = await getRoom(db, input.roomId, user);
     if (!room.membershipRole && !elevated(user)) throw new ApiError(403, 'ROOM_MEMBERSHIP_REQUIRED', 'Join the room before creating a pin');
   }
+  assertPinState(input.type, input.status);
+  assertInitialPinState(input.type, input.status);
   const id = crypto.randomUUID();
   const timestamp = now();
   await db.batch([
@@ -373,8 +459,17 @@ export async function createPin(db: D1Database, user: AuthenticatedUser, input: 
 
 export async function updatePin(db: D1Database, pinId: string, user: AuthenticatedUser, input: UpdatePinInput): Promise<PinRecord> {
   const current = await getPin(db, pinId, user);
-  if (current.creatorId !== user.id && !elevated(user)) throw new ApiError(403, 'PIN_UPDATE_DENIED', 'Only the creator can update this pin');
+  const currentRow = await pinRow(db, pinId, user.id);
+  const canCollaborate = currentRow?.visibility === 'room' && Boolean(currentRow.membership_role);
+  if (current.creatorId !== user.id && !elevated(user) && !canCollaborate) {
+    throw new ApiError(403, 'PIN_UPDATE_DENIED', 'Only the creator or a room member can update this pin');
+  }
   if (input.visibility === 'room' && !current.roomId) throw new ApiError(400, 'ROOM_ID_REQUIRED', 'A room-visible pin must belong to a room');
+  if (input.status === 'deleted') throw new ApiError(400, 'PIN_DELETE_REQUIRES_DELETE', 'Use DELETE to delete a pin');
+  const nextType = input.type ?? current.type;
+  const nextStatus = input.status ?? current.status;
+  assertPinState(nextType, nextStatus);
+  if (input.status !== undefined) assertStatusTransition(current.type, current.status, nextType, input.status);
   const assignments: string[] = [];
   const values: Array<string | number | null> = [];
   const fields: Array<[keyof Omit<UpdatePinInput, 'expectedVersion'>, string]> = [
@@ -398,24 +493,57 @@ export async function updatePin(db: D1Database, pinId: string, user: Authenticat
          SELECT 1 FROM pins WHERE id = ? AND version = ? AND updated_at = ?
        )`,
     ).bind(crypto.randomUUID(), user.id, 'pin.update', 'pin', pinId,
-      JSON.stringify({ fromVersion: input.expectedVersion }), updatedAt, pinId, input.expectedVersion + 1, updatedAt),
+      JSON.stringify({
+        fromVersion: input.expectedVersion,
+        toVersion: input.expectedVersion + 1,
+        changedFields: fields.filter(([key]) => input[key] !== undefined).map(([key]) => key),
+      }), updatedAt, pinId, input.expectedVersion + 1, updatedAt),
   ]);
   const result = results[0];
   if (!result) throw new ApiError(500, 'PIN_UPDATE_FAILED', 'Pin update did not return a database result');
   if (result.meta.changes === 0) {
-    throw new ApiError(409, 'PIN_VERSION_CONFLICT', 'Pin was updated by another client', { currentVersion: current.version });
+    const latest = await pinRow(db, pinId, user.id);
+    throw new ApiError(409, 'PIN_VERSION_CONFLICT', 'Pin was updated by another client', {
+      expectedVersion: input.expectedVersion,
+      currentVersion: latest?.version ?? current.version,
+    });
   }
   return getPin(db, pinId, user);
 }
 
-export async function deletePin(db: D1Database, pinId: string, user: AuthenticatedUser): Promise<void> {
+export async function deletePin(
+  db: D1Database,
+  pinId: string,
+  user: AuthenticatedUser,
+  expectedVersion?: number,
+) {
   const row = await pinRow(db, pinId, user.id);
-  if (!row) throw new ApiError(404, 'PIN_NOT_FOUND', 'Pin was not found');
+  if (!row || row.status === 'deleted') throw new ApiError(404, 'PIN_NOT_FOUND', 'Pin was not found');
   if (row.creator_id !== user.id && !elevated(user)) throw new ApiError(403, 'PIN_DELETE_DENIED', 'Only the creator can delete this pin');
-  await db.batch([
-    db.prepare('DELETE FROM pins WHERE id = ?').bind(pinId),
-    auditStatement(db, user.id, 'pin.delete', 'pin', pinId),
+  if (expectedVersion !== undefined && row.version !== expectedVersion) {
+    throw new ApiError(409, 'PIN_VERSION_CONFLICT', 'Pin was updated by another client', {
+      expectedVersion,
+      currentVersion: row.version,
+    });
+  }
+  const timestamp = now();
+  const deleteVersion = expectedVersion ?? row.version;
+  const results = await db.batch([
+    db.prepare("UPDATE pins SET status = 'deleted', version = version + 1, updated_at = ? WHERE id = ? AND version = ?")
+      .bind(timestamp, pinId, deleteVersion),
+    db.prepare(
+      `INSERT INTO audit_logs (id, actor_id, action, target_type, target_id, metadata_json, created_at)
+       SELECT ?, ?, 'pin.delete', 'pin', ?, ?, ? WHERE EXISTS (
+         SELECT 1 FROM pins WHERE id = ? AND status = 'deleted' AND version = ? AND updated_at = ?
+       )`,
+    ).bind(crypto.randomUUID(), user.id, pinId,
+      JSON.stringify({ fromVersion: deleteVersion, toVersion: deleteVersion + 1 }), timestamp,
+      pinId, deleteVersion + 1, timestamp),
   ]);
+  if (results[0]?.meta.changes === 0) {
+    throw new ApiError(409, 'PIN_VERSION_CONFLICT', 'Pin was updated by another client');
+  }
+  return { pinId, version: deleteVersion + 1, deletedAt: timestamp };
 }
 
 export async function listPinComments(db: D1Database, pinId: string, user: AuthenticatedUser) {
@@ -444,6 +572,134 @@ export async function createPinComment(db: D1Database, pinId: string, user: Auth
     auditStatement(db, user.id, 'pin.comment.create', 'pin', pinId, { commentId: id }),
   ]);
   return { id, pinId, authorId: user.id, authorName: user.displayName, content: input.content, createdAt: timestamp };
+}
+
+function reportFromRow(row: ReportRow) {
+  return {
+    id: row.id,
+    pinId: row.pin_id,
+    reporterId: row.reporter_id,
+    reporterName: row.reporter_name,
+    reason: row.reason,
+    detail: row.detail,
+    status: row.status,
+    resolverId: row.resolver_id,
+    createdAt: row.created_at,
+    resolvedAt: row.resolved_at,
+  };
+}
+
+export async function createPinReport(
+  db: D1Database,
+  pinId: string,
+  user: AuthenticatedUser,
+  input: CreatePinReportInput,
+) {
+  await getPin(db, pinId, user);
+  const id = crypto.randomUUID();
+  const timestamp = now();
+  try {
+    await db.batch([
+      db.prepare(
+        `INSERT INTO pin_reports (id, pin_id, reporter_id, reason, detail, status, created_at)
+         VALUES (?, ?, ?, ?, ?, 'pending', ?)`,
+      ).bind(id, pinId, user.id, input.reason, input.detail ?? null, timestamp),
+      auditStatement(db, user.id, 'pin.report.create', 'pin', pinId, { reportId: id, reason: input.reason }),
+    ]);
+  } catch (error) {
+    if (/UNIQUE|pin_reports_pending_reporter_idx/i.test(String(error))) {
+      throw new ApiError(409, 'PIN_ALREADY_REPORTED', 'The current user already has a pending report for this pin');
+    }
+    throw error;
+  }
+  return {
+    id,
+    pinId,
+    reporterId: user.id,
+    reporterName: user.displayName,
+    reason: input.reason,
+    detail: input.detail ?? null,
+    status: 'pending' as const,
+    resolverId: null,
+    createdAt: timestamp,
+    resolvedAt: null,
+  };
+}
+
+export async function listPinReports(db: D1Database, pinId: string, user: AuthenticatedUser) {
+  await getPin(db, pinId, user);
+  if (!elevated(user)) throw new ApiError(403, 'PIN_REPORTS_ACCESS_DENIED', 'Only moderators can view pin reports');
+  const result = await db.prepare(
+    `SELECT pr.*, u.display_name AS reporter_name
+     FROM pin_reports pr JOIN users u ON u.id = pr.reporter_id
+     WHERE pr.pin_id = ? ORDER BY pr.created_at DESC LIMIT 500`,
+  ).bind(pinId).all<ReportRow>();
+  return result.results.map(reportFromRow);
+}
+
+export async function resolvePinReport(
+  db: D1Database,
+  pinId: string,
+  reportId: string,
+  user: AuthenticatedUser,
+  status: Exclude<PinReportStatus, 'pending'>,
+) {
+  await getPin(db, pinId, user);
+  if (!elevated(user)) throw new ApiError(403, 'PIN_REPORT_RESOLVE_DENIED', 'Only moderators can resolve reports');
+  const timestamp = now();
+  const results = await db.batch([
+    db.prepare(
+      `UPDATE pin_reports SET status = ?, resolver_id = ?, resolved_at = ?
+       WHERE id = ? AND pin_id = ? AND status = 'pending'`,
+    ).bind(status, user.id, timestamp, reportId, pinId),
+    db.prepare(
+      `INSERT INTO audit_logs (id, actor_id, action, target_type, target_id, metadata_json, created_at)
+       SELECT ?, ?, 'pin.report.resolve', 'pin', ?, ?, ? WHERE EXISTS (
+         SELECT 1 FROM pin_reports WHERE id = ? AND pin_id = ? AND status = ? AND resolved_at = ?
+       )`,
+    ).bind(crypto.randomUUID(), user.id, pinId, JSON.stringify({ reportId, status }), timestamp,
+      reportId, pinId, status, timestamp),
+  ]);
+  if (results[0]?.meta.changes === 0) {
+    throw new ApiError(404, 'PENDING_PIN_REPORT_NOT_FOUND', 'Pending pin report was not found');
+  }
+  const row = await db.prepare(
+    `SELECT pr.*, u.display_name AS reporter_name
+     FROM pin_reports pr JOIN users u ON u.id = pr.reporter_id WHERE pr.id = ?`,
+  ).bind(reportId).first<ReportRow>();
+  if (!row) throw new ApiError(404, 'PIN_REPORT_NOT_FOUND', 'Pin report was not found');
+  return reportFromRow(row);
+}
+
+export async function listPinActivity(db: D1Database, pinId: string, user: AuthenticatedUser) {
+  const row = await pinRow(db, pinId, user.id);
+  if (!row) throw new ApiError(404, 'PIN_NOT_FOUND', 'Pin was not found');
+  if (row.status !== 'deleted') await getPin(db, pinId, user);
+  else if (!canReadPin(row, user)) throw new ApiError(403, 'PIN_ACCESS_DENIED', 'This pin is not visible to the current user');
+  const result = await db.prepare(
+    `SELECT a.id, a.actor_id, u.display_name AS actor_name, a.action, a.metadata_json, a.created_at
+     FROM audit_logs a LEFT JOIN users u ON u.id = a.actor_id
+     WHERE a.target_type = 'pin' AND a.target_id = ?
+     ORDER BY a.created_at ASC, a.id ASC LIMIT 500`,
+  ).bind(pinId).all<AuditRow>();
+  return result.results.map((row) => {
+    let metadata: unknown = null;
+    if (row.metadata_json) {
+      try {
+        metadata = JSON.parse(row.metadata_json) as unknown;
+      } catch {
+        metadata = { malformed: true };
+      }
+    }
+    return {
+      id: row.id,
+      actorId: row.actor_id,
+      actorName: row.actor_name,
+      action: row.action,
+      metadata,
+      createdAt: row.created_at,
+    };
+  });
 }
 
 export async function getTwinProfile(db: D1Database, userId: string) {
