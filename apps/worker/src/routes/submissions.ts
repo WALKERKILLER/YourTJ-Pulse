@@ -1,10 +1,12 @@
-import { API_LIMITS, featureSchema, submitFeatureSchema } from '@yourtj/contracts';
+import { API_LIMITS, featureSchema, submitFeatureSchema, type GeoJsonFeature } from '@yourtj/contracts';
 import type { Context } from 'hono';
 import { Hono } from 'hono';
 import { z } from 'zod';
 
 import { authenticate } from '../auth/middleware';
 import { requireRole } from '../auth/roles';
+import { authenticateToken, bearerToken } from '../auth/session';
+import { claimSubmissionReview, releaseSubmissionReview } from '../repositories/business';
 import {
   createSubmission,
   getSubmission,
@@ -42,7 +44,10 @@ function submissionId(context: Context<WorkerEnv>) {
 
 submissionsRouter.post('/submit', async (context) => {
   const input = await parseJsonBody(context.req.raw, submitFeatureSchema);
-  const submission = await createSubmission(context.env.TILES, input);
+  const token = bearerToken(context.req.header('Authorization'));
+  const actor = token ? authenticateToken(token, context.env) : undefined;
+  if (token && !actor) throw new ApiError(401, 'INVALID_ACCESS_TOKEN', 'Access token is invalid or expired');
+  const submission = await createSubmission(context.env.TILES, input, actor?.id);
   return context.json({ ok: true, id: submission.id, count: submission.count });
 });
 
@@ -56,6 +61,27 @@ async function detailData(context: Context<WorkerEnv>) {
     throw new ApiError(404, 'SUBMISSION_NOT_FOUND', 'Submission was not found');
   }
   return submission;
+}
+
+async function reviewWithAudit(
+  context: Context<WorkerEnv>,
+  id: string,
+  action: 'apply' | 'reject',
+  message?: string,
+  features?: GeoJsonFeature[],
+) {
+  const reviewer = context.get('user');
+  await claimSubmissionReview(context.env.DB, reviewer.id, id, action);
+  try {
+    return await reviewSubmission(context.env.TILES, id, action, reviewer, message, features);
+  } catch (error) {
+    try {
+      await releaseSubmissionReview(context.env.DB, id);
+    } catch (releaseError) {
+      console.error('Failed to release submission review claim', releaseError);
+    }
+    throw error;
+  }
 }
 
 submissionsRouter.get(
@@ -76,14 +102,8 @@ submissionsRouter.post(
   requireRole('moderator', 'admin'),
   async (context) => {
     const input = await parseJsonBody(context.req.raw, reviewSchema);
-    const result = await reviewSubmission(
-      context.env.TILES,
-      submissionId(context),
-      input.action,
-      context.get('user'),
-      input.message,
-      input.action === 'apply' ? input.features : undefined,
-    );
+    const result = await reviewWithAudit(context, submissionId(context), input.action, input.message,
+      input.action === 'apply' ? input.features : undefined);
     return context.json({ ok: true, ...result });
   },
 );
@@ -94,28 +114,13 @@ adminSubmissionsRouter.get('/', async (context) => jsonData(context, await listD
 adminSubmissionsRouter.get('/:id', async (context) => jsonData(context, await detailData(context)));
 adminSubmissionsRouter.post('/:id/apply', async (context) => {
   const input = await parseJsonBody(context.req.raw, reviewMessageSchema);
-  return jsonData(
-    context,
-    await reviewSubmission(
-      context.env.TILES,
-      submissionId(context),
-      'apply',
-      context.get('user'),
-      input.message,
-      input.features,
-    ),
-  );
+  const id = submissionId(context);
+  const result = await reviewWithAudit(context, id, 'apply', input.message, input.features);
+  return jsonData(context, result);
 });
 adminSubmissionsRouter.post('/:id/reject', async (context) => {
   const input = await parseJsonBody(context.req.raw, reviewMessageSchema);
-  return jsonData(
-    context,
-    await reviewSubmission(
-      context.env.TILES,
-      submissionId(context),
-      'reject',
-      context.get('user'),
-      input.message,
-    ),
-  );
+  const id = submissionId(context);
+  const result = await reviewWithAudit(context, id, 'reject', input.message);
+  return jsonData(context, result);
 });

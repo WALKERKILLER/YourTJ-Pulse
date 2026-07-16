@@ -31,6 +31,12 @@ async function readJson<T>(bucket: R2Bucket, key: string): Promise<T | undefined
   return object.json<T>();
 }
 
+async function readJsonWithEtag<T>(bucket: R2Bucket, key: string): Promise<{ etag: string; value: T } | undefined> {
+  const object = await bucket.get(key);
+  if (object === null) return undefined;
+  return { etag: object.etag, value: await object.json<T>() };
+}
+
 async function writeJson(bucket: R2Bucket, key: string, value: unknown) {
   await bucket.put(key, JSON.stringify(value), {
     httpMetadata: { contentType: 'application/json; charset=utf-8' },
@@ -39,6 +45,20 @@ async function writeJson(bucket: R2Bucket, key: string, value: unknown) {
 
 async function readIndex(bucket: R2Bucket) {
   return (await readJson<Record<string, SubmissionSummary>>(bucket, 'submissions/index.json')) ?? {};
+}
+
+async function updateIndex(bucket: R2Bucket, submission: Submission) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const current = await readJsonWithEtag<Record<string, SubmissionSummary>>(bucket, 'submissions/index.json');
+    const index = current?.value ?? {};
+    index[submission.id] = summaryOf(submission);
+    const written = await bucket.put('submissions/index.json', JSON.stringify(index), {
+      httpMetadata: { contentType: 'application/json; charset=utf-8' },
+      onlyIf: current ? { etagMatches: current.etag } : { etagDoesNotMatch: '*' },
+    });
+    if (written !== null) return;
+  }
+  throw new ApiError(409, 'SUBMISSION_INDEX_CHANGED', 'Submission index changed concurrently; retry the request');
 }
 
 function summaryOf(submission: Submission): SubmissionSummary {
@@ -57,16 +77,14 @@ function summaryOf(submission: Submission): SubmissionSummary {
 
 async function saveSubmission(bucket: R2Bucket, submission: Submission) {
   await writeJson(bucket, submissionKey(submission.id), submission);
-  const index = await readIndex(bucket);
-  index[submission.id] = summaryOf(submission);
-  await writeJson(bucket, 'submissions/index.json', index);
+  await updateIndex(bucket, submission);
 }
 
-export async function createSubmission(bucket: R2Bucket, input: SubmitFeatureInput) {
+export async function createSubmission(bucket: R2Bucket, input: SubmitFeatureInput, actorId?: string) {
   const submission: Submission = {
     id: crypto.randomUUID(),
     submittedAt: new Date().toISOString(),
-    user: input.user ?? 'anonymous',
+    user: actorId ?? 'anonymous',
     count: input.features.length,
     features: input.features,
     status: 'pending',
@@ -124,13 +142,16 @@ export async function reviewSubmission(
 
   let totalFeatures: number | undefined;
   if (action === 'apply') {
-    const master =
-      (await readJson<FeatureCollection>(bucket, 'data/custom.geojson')) ??
-      ({ type: 'FeatureCollection', features: [] } satisfies FeatureCollection);
+    const currentMaster = await readJsonWithEtag<FeatureCollection>(bucket, 'data/custom.geojson');
+    const master = currentMaster?.value ?? ({ type: 'FeatureCollection', features: [] } satisfies FeatureCollection);
     const acceptedFeatures = reviewedFeatures ?? submission.features;
     master.features = mergeFeatures(master.features, acceptedFeatures);
     totalFeatures = master.features.length;
-    await writeJson(bucket, 'data/custom.geojson', master);
+    const written = await bucket.put('data/custom.geojson', JSON.stringify(master), {
+      httpMetadata: { contentType: 'application/json; charset=utf-8' },
+      onlyIf: currentMaster ? { etagMatches: currentMaster.etag } : { etagDoesNotMatch: '*' },
+    });
+    if (written === null) throw new ApiError(409, 'MAP_DATA_CHANGED', 'Map data changed during review; retry the request');
     if (reviewedFeatures !== undefined) submission.reviewedFeatures = reviewedFeatures;
   }
 

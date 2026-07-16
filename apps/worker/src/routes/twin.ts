@@ -1,0 +1,29 @@
+import { createTwinEventSchema, updateTwinProfileSchema } from '@yourtj/contracts';
+import { Hono } from 'hono';
+
+import { authenticate } from '../auth/middleware';
+import {
+  createTwinEvent,
+  getTwinProfile,
+  listTwinEvents,
+  updateTwinProfile,
+} from '../repositories/business';
+import type { WorkerEnv } from '../types';
+import { parseJsonBody } from '../utils/body';
+import { jsonData } from '../utils/responses';
+
+export const twinRouter = new Hono<WorkerEnv>();
+
+twinRouter.use('*', authenticate);
+twinRouter.get('/profile', async (context) =>
+  jsonData(context, await getTwinProfile(context.env.DB, context.get('user').id)));
+twinRouter.patch('/profile', async (context) => {
+  const input = await parseJsonBody(context.req.raw, updateTwinProfileSchema);
+  return jsonData(context, await updateTwinProfile(context.env.DB, context.get('user'), input));
+});
+twinRouter.get('/events', async (context) =>
+  jsonData(context, await listTwinEvents(context.env.DB, context.get('user').id)));
+twinRouter.post('/events', async (context) => {
+  const input = await parseJsonBody(context.req.raw, createTwinEventSchema);
+  return jsonData(context, await createTwinEvent(context.env.DB, context.get('user'), input), 201);
+});

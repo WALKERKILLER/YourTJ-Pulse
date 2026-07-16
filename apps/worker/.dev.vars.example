@@ -1,3 +1,10 @@
-# 使用 `openssl rand -hex 32` 等方式生成本地随机值，不要提交真实 Token。
-AUTH_TOKENS_JSON='[{"token":"<set-a-long-random-token>","user":{"id":"local-admin","displayName":"本地管理员","roles":["admin"]}}]'
+# 本地可显式启用开发身份；生产环境必须保持关闭。
+APP_ENV=development
+DEV_AUTH_ENABLED=true
+DEV_USER_ID=local-admin
+DEV_USER_DISPLAY_NAME=本地管理员
+DEV_USER_ROLE=admin
+
+# 需要测试 Bearer Session 时，用本地随机值替换占位符；不得提交真实 Token。
+TRUSTED_SESSION_TOKENS_JSON='[{"token":"<set-a-long-random-token>","user":{"id":"local-session-user","displayName":"本地会话用户","roles":["user"]}}]'
 CORS_ORIGINS=http://localhost:5173,http://localhost:8787
