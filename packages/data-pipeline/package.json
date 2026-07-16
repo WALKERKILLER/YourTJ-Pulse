@@ -1,0 +1,13 @@
+{
+  "name": "@yourtj/data-pipeline",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node src/validate.mjs",
+    "test": "node --test test/*.test.mjs",
+    "lint": "eslint src test",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "validate": "node src/validate.mjs"
+  }
+}

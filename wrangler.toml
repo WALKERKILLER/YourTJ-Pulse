@@ -1,5 +1,5 @@
-name = "ytj-map"
-main = "src/index.js"
+name = "yourtj-pulse"
+main = "apps/worker/src/index.ts"
 compatibility_date = "2026-06-28"
 
 [assets]

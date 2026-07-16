@@ -1,0 +1,25 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "yourtj-pulse",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-06-28",
+  "assets": {
+    "directory": "../../public",
+    "binding": "ASSETS"
+  },
+  "routes": [
+    {
+      "pattern": "lyra4.icu/*",
+      "zone_name": "lyra4.icu"
+    }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "TILES",
+      "bucket_name": "ytj-map"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

@@ -1,5 +1,20 @@
 # CLAUDE.md
 
+> 当前项目是 YourTJ Pulse。下面折叠区仅记录迁移前 YTJ-Map 的历史实现，不代表当前入口或安全约定。
+
+## 当前工程约定
+
+- Node.js 22 与 pnpm 10.33 由仓库版本配置约束。
+- `apps/worker/src/index.ts` 是 Worker 主入口；根 `src/index.js` 仅为兼容转发。
+- API、GeoJSON 与实时协议 Schema 位于 `packages/contracts`。
+- 管理 API 只接受 `Authorization: Bearer`，并要求 `moderator` 或 `admin`；禁止默认密钥、Query Token 和 Cookie Token。
+- 旧页面继续位于 `public/`，直到 React 页面达到功能等价。
+- 本地门禁为 `pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm data:validate`。
+- 未经明确授权不得部署、写入远端、提交、推送或修改生产 R2。
+
+<details>
+<summary>迁移前 YTJ-Map 历史说明</summary>
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 项目概述
@@ -133,3 +148,5 @@ cp tongji.pmtiles ../severless/
 - `tongji.pmtiles` 文件在本地（约 1MB），但实际运行时通过 Worker 从 R2 读取。本地文件仅作离线参考，**不要提交到 git**（已在 `.gitignore` 之外，需确认 git 状态）
 - 前端所有 JS 是 IIFE 模式，变量名短（`E`, `RO`, `T`, `e`），注意不要意外引入命名冲突
 - 没有认证机制，admin.html 页面是公开可访问的
+
+</details>
