@@ -107,16 +107,18 @@ export function Map({ children, className, initialViewState, mapStyle, onClick, 
 
 interface MapControlsProps {
   className?: string;
+  onLocate?: (position: { accuracy: number; latitude: number; longitude: number }) => void;
   onThemeToggle?: () => void;
 }
 
-export function MapControls({ className, onThemeToggle }: MapControlsProps) {
+export function MapControls({ className, onLocate, onThemeToggle }: MapControlsProps) {
   const map = useMap();
 
   function locate(): void {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition(({ coords }) => {
       map.flyTo({ center: [coords.longitude, coords.latitude], zoom: 17, essential: true });
+      onLocate?.({ longitude: coords.longitude, latitude: coords.latitude, accuracy: coords.accuracy });
     });
   }
 

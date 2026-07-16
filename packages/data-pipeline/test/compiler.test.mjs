@@ -5,6 +5,7 @@ import { generateCollision } from '../src/compiler/collision.mjs';
 import { findRoute, generateNavigationGraph } from '../src/compiler/navigation.mjs';
 import { pointInPolygon, segmentCrossesAreaFeature } from '../src/compiler/geo.mjs';
 import { lngLatToScene, sceneToLngLat } from '../src/compiler/projection.mjs';
+import { generateSearchIndex, normalizeSearchText } from '../src/compiler/search.mjs';
 import { stableFeatureId } from '../src/compiler/stable-ids.mjs';
 
 const config = {
@@ -49,6 +50,15 @@ describe('campus world compiler', () => {
     });
     assert.equal(segmentCrossesAreaFeature([0, 0], [1, 0], obstacle), true);
     assert.equal(segmentCrossesAreaFeature([0, 0.2], [1, 0.2], obstacle), false);
+  });
+
+  it('builds searchable pinyin, alias, number, category, and description terms', () => {
+    /** @type {{type:'Feature',id:string,properties:Record<string,unknown>}} */
+    const feature = { type: 'Feature', id: 'way/42', properties: { name: '西南一楼', 'name:en': 'Xinan Building 1', ref: 'S1', description: '学生宿舍' } };
+    const place = { id: 'tongji-siping-way-42', name: '西南一楼', aliases: [], category: 'dormitory', longitude: 121.5, latitude: 31.28, entranceNodeIds: ['node-a'] };
+    const index = generateSearchIndex([place], [feature], new Map([['way/42', place.id]]), config);
+    const searchText = index.documents[0]?.searchText ?? '';
+    for (const query of ['xinan yi lou', 'xnyl', 'building 1', 's1', 'dormitory', '学生宿舍']) assert.ok(searchText.replaceAll(' ', '').includes(normalizeSearchText(query).replaceAll(' ', '')));
   });
 
   it('splits crossing walkways into a connected intersection', () => {

@@ -9,5 +9,8 @@
     "lint": "eslint src test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "validate": "node src/validate.mjs && node src/verify-generated.mjs"
+  },
+  "dependencies": {
+    "pinyin-pro": "3.28.1"
   }
 }

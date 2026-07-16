@@ -66,6 +66,7 @@ pnpm data:validate
 主要生成文件：
 
 - `data/generated/places.json`：Web 与游戏共用的地点、别名、分类、入口和场景坐标。
+- `data/generated/search-index.json`：名称、拼音、英文、编号、别名、类别和功能描述的离线索引。
 - `data/generated/navigation-graph.json`：步行、骑行、无障碍、台阶、室内和表面属性完整的有向图。
 - `data/generated/campus-scene.json`、`collision.geojson`：数字校园场景与碰撞边界。
 - `data/generated/world-config.json`：WGS84 与本地米制场景坐标的共享参数。

@@ -13,6 +13,7 @@ import { generateCollision } from './compiler/collision.mjs';
 import { generateNavigationGraph } from './compiler/navigation.mjs';
 import { generatePlaces } from './compiler/places.mjs';
 import { generateCampusScene } from './compiler/scene.mjs';
+import { generateSearchIndex } from './compiler/search.mjs';
 import { featureLookupKey, stableFeatureId } from './compiler/stable-ids.mjs';
 
 const repositoryRoot = fileURLToPath(new URL('../../../', import.meta.url));
@@ -21,6 +22,7 @@ const sourcePath = resolve(repositoryRoot, 'data/full.geojson');
 const stableMapPath = resolve(repositoryRoot, 'data/stable-id-map.json');
 const outputPaths = {
   places: resolve(generatedRoot, 'places.json'),
+  search: resolve(generatedRoot, 'search-index.json'),
   worldConfig: resolve(generatedRoot, 'world-config.json'),
   navigation: resolve(generatedRoot, 'navigation-graph.json'),
   scene: resolve(generatedRoot, 'campus-scene.json'),
@@ -133,12 +135,14 @@ export async function compileCampusWorld() {
     const classified = classifyFeatures(source.features, stableIds);
     const navigation = generateNavigationGraph(source.features, stableIds, config);
     const places = generatePlaces(source.features, stableIds, navigation, config);
+    const search = generateSearchIndex(places, source.features, stableIds, config);
     const scene = generateCampusScene(source.features, stableIds, places, config);
     const collision = generateCollision(source.features, stableIds, config);
 
     await Promise.all([
       writeJson(outputPaths.worldConfig, publicWorldConfig(config)),
       writeJson(outputPaths.places, places),
+      writeJson(outputPaths.search, search),
       writeJson(outputPaths.navigation, navigation),
       writeJson(outputPaths.scene, scene),
       writeJson(outputPaths.collision, collision),
@@ -150,6 +154,7 @@ export async function compileCampusWorld() {
     const artifactPaths = [
       outputPaths.worldConfig,
       outputPaths.places,
+      outputPaths.search,
       outputPaths.navigation,
       outputPaths.scene,
       outputPaths.collision,
@@ -171,6 +176,7 @@ export async function compileCampusWorld() {
       configSha256: sha256(JSON.stringify(config)),
       counts: {
         places: places.length,
+        searchDocuments: search.documents.length,
         navigationNodes: navigation.nodes.length,
         navigationEdges: navigation.edges.length,
         sceneBuildings: scene.buildings.length,
