@@ -1,11 +1,17 @@
+import { createCampusStyle } from '@yourtj/campus-style';
 import { buildTwinMovementPlan, calculateCampusRoutes, deriveTwinBehavior, projectTwinMovement, type NavigationGraph, type NavigationPlace, type TwinBehaviorState } from '@yourtj/campus-navigation';
-import { ArrowLeft, Footprints, Home, Pause, Play, School, ShieldCheck } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { ArrowLeft, Footprints, Pause, Play, Settings2, ShieldCheck } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
 import graphData from '../../../../data/generated/navigation-graph.json';
 import placesData from '../../../../data/generated/places.json';
 import worldConfig from '../../../../data/generated/world-config.json';
+import { Map, MapMarker, MarkerContent } from '../components/map/map';
+import { detectPulseCapability, resolvePulseQuality } from '../features/pulsetown/quality';
+import { PulseTownThreeLayer } from '../features/pulsetown/pulsetown-three-layer';
+import { registerPmtilesProtocol } from '../lib/pmtiles';
+import { usePreferencesStore } from '../stores/preferences-store';
 
 const graph = graphData as unknown as NavigationGraph;
 const places = placesData as unknown as NavigationPlace[];
@@ -13,6 +19,8 @@ const originPlaceId = 'tongji-siping-way-1465759871';
 const destinationPlaceId = 'tongji-siping-way-183383474';
 const eventStartAt = Date.parse('2026-07-17T08:00:00+08:00');
 const eventEndAt = eventStartAt + 100 * 60_000;
+
+registerPmtilesProtocol();
 
 const stateLabels: Record<TwinBehaviorState, string> = {
   idle: '待机', preparing: '准备出门', walking: '步行中', running: '跑步中', cycling: '骑行中', arrived: '已到达',
@@ -33,25 +41,33 @@ export function PulseTownPage() {
       id: 'web-demo-plan', userId: 'web-demo-user', eventId: 'web-demo-class', originPlaceId, destinationPlaceId,
       eventStartAt, movementType: 'walk', route, routeVersion: graph.version,
     });
-    const nodesById = new Map(graph.nodes.map((node) => [node.id, node]));
-    const nodes = plan.pathNodeIds.map((id) => nodesById.get(id)).filter((node): node is NonNullable<typeof node> => Boolean(node));
-    const bounds = nodes.reduce((current, node) => ({
-      minX: Math.min(current.minX, node.x), maxX: Math.max(current.maxX, node.x),
-      minY: Math.min(current.minY, node.y), maxY: Math.max(current.maxY, node.y),
-    }), { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity });
-    const padding = 18;
-    const width = Math.max(80, bounds.maxX - bounds.minX + padding * 2);
-    const height = Math.max(80, bounds.maxY - bounds.minY + padding * 2);
-    const toSvg = (x: number, y: number) => ({ x: x - bounds.minX + padding, y: bounds.maxY - y + padding });
-    const routePath = nodes.map((node, index) => {
-      const point = toSvg(node.x, node.y);
-      return `${index ? 'L' : 'M'} ${point.x.toFixed(2)} ${point.y.toFixed(2)}`;
-    }).join(' ');
-    return { plan, route, nodes, toSvg, routePath, width, height };
+    const origin = places.find((place) => place.id === originPlaceId)!;
+    const destination = places.find((place) => place.id === destinationPlaceId)!;
+    return {
+      plan,
+      route,
+      center: [(origin.longitude + destination.longitude) / 2, (origin.latitude + destination.latitude) / 2] as [number, number],
+      originNode: graph.nodes.find((node) => node.id === plan.pathNodeIds[0])!,
+    };
   }, []);
   const [enabled, setEnabled] = useState(false);
   const [playing, setPlaying] = useState(false);
+  const [fallbackReason, setFallbackReason] = useState('');
   const [clock, setClock] = useState(() => (demo?.plan.startedAt ?? eventStartAt) - 5 * 60_000);
+  const avatarAnimation = usePreferencesStore((state) => state.avatarAnimation);
+  const hd2d = usePreferencesStore((state) => state.hd2d);
+  const particles = usePreferencesStore((state) => state.particles);
+  const pulseQuality = usePreferencesStore((state) => state.pulseQuality);
+  const shadows = usePreferencesStore((state) => state.shadows);
+  const theme = usePreferencesStore((state) => state.theme);
+  const weather = usePreferencesStore((state) => state.weather);
+  const setAvatarAnimation = usePreferencesStore((state) => state.setAvatarAnimation);
+  const setHd2d = usePreferencesStore((state) => state.setHd2d);
+  const setParticles = usePreferencesStore((state) => state.setParticles);
+  const setPulseQuality = usePreferencesStore((state) => state.setPulseQuality);
+  const setShadows = usePreferencesStore((state) => state.setShadows);
+  const setWeather = usePreferencesStore((state) => state.setWeather);
+  const mapStyle = useMemo(() => createCampusStyle(theme), [theme]);
 
   const timelineEnd = eventStartAt + 12 * 60_000;
   useEffect(() => {
@@ -66,15 +82,23 @@ export function PulseTownPage() {
     return () => window.clearInterval(timer);
   }, [enabled, playing, timelineEnd]);
 
-  if (!demo) {
-    return <main className="twin-page"><p className="twin-unavailable">演示路线暂时不可用。</p></main>;
-  }
+  const useFallback = useCallback((reason: string) => {
+    setFallbackReason(reason);
+    setPulseQuality('low');
+  }, [setPulseQuality]);
+
+  if (!demo) return <main className="twin-page"><p className="twin-unavailable">演示路线暂时不可用。</p></main>;
   const behavior = enabled ? deriveTwinBehavior(demo.plan, { eventType: 'class', eventStartAt, eventEndAt }, clock) : 'idle';
   const projection = enabled ? projectTwinMovement(demo.plan, graph, clock) : null;
-  const marker = projection ? demo.toSvg(projection.x, projection.y) : null;
-  const origin = demo.toSvg(demo.nodes[0]!.x, demo.nodes[0]!.y);
-  const destination = demo.toSvg(demo.nodes.at(-1)!.x, demo.nodes.at(-1)!.y);
   const timelineStart = demo.plan.startedAt - 5 * 60_000;
+  const avatarState = behavior === 'running' ? 'run' : behavior === 'walking' ? 'walk' : 'idle';
+  const avatar = {
+    x: projection?.x ?? demo.originNode.x,
+    y: projection?.y ?? demo.originNode.y,
+    headingDegrees: projection?.headingDegrees ?? 0,
+    state: avatarState as 'idle' | 'walk' | 'run',
+  };
+  const effectiveQuality = enabled && hd2d ? pulseQuality : 'low';
 
   return <main className="twin-page">
     <header className="twin-header">
@@ -83,34 +107,47 @@ export function PulseTownPage() {
     </header>
     <section className="twin-layout">
       <div className="twin-copy">
-        <p className="eyebrow">PULSETOWN · TWIN LAB</p>
-        <h1>让日程在校园路网上<br />自然发生。</h1>
-        <p>课程时间表只提供上课时间、教室与周次。数字分身根据校园路径生成一次移动计划，之后的位置全部在本机按时间推导。</p>
+        <p className="eyebrow">PULSETOWN · HD-2D LAB</p>
+        <h1>让日程在校园世界里<br />自然发生。</h1>
+        <p>课程时间表只提供上课时间、教室与周次。服务端生成一次移动计划，人物位置在本机推导；Three.js 只绘制小范围校园原型。</p>
         <div className="twin-privacy-note"><ShieldCheck size={18} /><span><strong>默认关闭，由你决定是否开启</strong><small>不会读取 GPS，也不会向实时房间广播模拟坐标。</small></span></div>
         <button className={`twin-opt-in ${enabled ? 'is-enabled' : ''}`} onClick={() => {
-          setEnabled((current) => !current);
+          const next = !enabled;
+          setEnabled(next);
           setPlaying(false);
           setClock(timelineStart);
-        }} aria-pressed={enabled}>
-          {enabled ? '已开启数字分身模拟' : '开启本次数字分身演示'}
-        </button>
+          setFallbackReason('');
+          if (next) {
+            const capability = detectPulseCapability();
+            const quality = resolvePulseQuality(capability);
+            setPulseQuality(quality);
+            if (!capability.webgl) setFallbackReason('当前环境不支持 Three.js，已使用普通地图');
+          }
+        }} aria-pressed={enabled}>{enabled ? '已开启数字分身模拟' : '开启本次数字分身演示'}</button>
+
+        <details className="twin-settings">
+          <summary><Settings2 size={14} />图形与动画设置</summary>
+          <label>质量<select value={pulseQuality} onChange={(event) => { setFallbackReason(''); setPulseQuality(event.target.value as 'high' | 'medium' | 'low'); }}><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
+          <label><input type="checkbox" checked={hd2d} onChange={(event) => setHd2d(event.target.checked)} />HD-2D</label>
+          <label><input type="checkbox" checked={weather} onChange={(event) => setWeather(event.target.checked)} />天气</label>
+          <label><input type="checkbox" checked={shadows} onChange={(event) => setShadows(event.target.checked)} />阴影</label>
+          <label><input type="checkbox" checked={particles} onChange={(event) => setParticles(event.target.checked)} />粒子</label>
+          <label><input type="checkbox" checked={avatarAnimation} onChange={(event) => setAvatarAnimation(event.target.checked)} />分身动画</label>
+        </details>
       </div>
 
       <div className={`twin-demo ${enabled ? 'is-enabled' : ''}`}>
         <div className="twin-demo-head">
-          <div><span>FRI · 第 3–4 节</span><strong>高等数学 · 教学北楼</strong></div>
+          <div><span>FRI · 第 3–4 节</span><strong>西南一楼 → 教学北楼</strong></div>
           <span className={`twin-state state-${behavior}`}>{stateLabels[behavior]}</span>
         </div>
-        <div className="twin-route-stage">
-          <svg viewBox={`0 0 ${demo.width} ${demo.height}`} role="img" aria-label="西南一楼到教学北楼的数字分身模拟路线">
-            <path className="twin-route-shadow" d={demo.routePath} />
-            <path className="twin-route-line" d={demo.routePath} />
-            <circle className="twin-place-dot origin" cx={origin.x} cy={origin.y} r="7" />
-            <circle className="twin-place-dot destination" cx={destination.x} cy={destination.y} r="7" />
-            {marker && projection ? <g className="twin-avatar" transform={`translate(${marker.x} ${marker.y}) rotate(${projection.headingDegrees})`}><circle r="10" /><path d="M 0 -6 L 4 5 L 0 3 L -4 5 Z" /></g> : null}
-          </svg>
-          <div className="twin-place-label origin"><Home size={13} /><span>西南一楼<small>宿舍 · 起点</small></span></div>
-          <div className="twin-place-label destination"><School size={13} /><span>教学北楼<small>教室 · 目的地</small></span></div>
+        <div className="twin-route-stage twin-map-stage">
+          <Map mapStyle={mapStyle} initialViewState={{ center: demo.center, zoom: 16.1, pitch: 55, bearing: -8 }}>
+            {enabled && effectiveQuality !== 'low' ? <PulseTownThreeLayer avatar={avatar} avatarAnimation={avatarAnimation} onUnavailable={useFallback} particles={particles} quality={effectiveQuality} shadows={shadows} weather={weather} /> : null}
+            {enabled && effectiveQuality === 'low' && projection ? <MapMarker longitude={projection.longitude} latitude={projection.latitude}><MarkerContent className="twin-low-avatar"><Footprints size={14} /></MarkerContent></MapMarker> : null}
+          </Map>
+          <span className="twin-quality-badge">{effectiveQuality.toUpperCase()} · {effectiveQuality === 'low' ? 'MAPLIBRE FALLBACK' : 'THREE.JS'}</span>
+          {fallbackReason ? <span className="twin-fallback-note" role="status">{fallbackReason}</span> : null}
         </div>
         <div className="twin-facts">
           <span><Footprints size={14} /><strong>{Math.round(demo.route.distanceMeters)} m</strong><small>校园道路</small></span>

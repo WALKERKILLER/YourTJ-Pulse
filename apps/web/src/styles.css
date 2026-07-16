@@ -370,6 +370,12 @@ button { cursor: pointer; }
 .twin-privacy-note small { margin-top: 3px; color: var(--muted); font-size: 9px; }
 .twin-opt-in { min-height: 48px; margin-top: 22px; padding: 0 20px; border: 0; border-radius: 13px; background: var(--ink); color: var(--paper); font-size: 11px; font-weight: 800; }
 .twin-opt-in.is-enabled { background: var(--teal); }
+.twin-settings { max-width: 510px; margin-top: 12px; padding: 11px 13px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); font-size: 10px; }
+.twin-settings summary { display: flex; align-items: center; color: var(--muted); font-weight: 800; cursor: pointer; gap: 7px; }
+.twin-settings[open] summary { margin-bottom: 12px; }
+.twin-settings label { display: inline-flex; min-height: 30px; align-items: center; margin-right: 13px; color: var(--muted); gap: 5px; }
+.twin-settings select { height: 28px; margin-left: 6px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-strong); color: var(--ink); font-size: 9px; }
+.twin-settings input { accent-color: var(--teal); }
 .twin-demo { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: 28px 28px 28px 8px; background: var(--surface); box-shadow: var(--shadow); transition: opacity .2s ease; }
 .twin-demo:not(.is-enabled) { opacity: .78; }
 .twin-demo-head { display: flex; align-items: center; justify-content: space-between; padding: 20px 22px; border-bottom: 1px solid var(--line); }
@@ -380,6 +386,13 @@ button { cursor: pointer; }
 .twin-demo.is-enabled .twin-state { background: color-mix(in srgb, var(--teal) 13%, transparent); color: var(--teal) !important; }
 .twin-route-stage { position: relative; height: min(50vh, 440px); min-height: 330px; padding: 24px; background: linear-gradient(135deg, color-mix(in srgb, var(--surface-strong) 65%, transparent), transparent), repeating-linear-gradient(45deg, transparent, transparent 18px, color-mix(in srgb, var(--line) 38%, transparent) 19px); }
 .twin-route-stage svg { width: 100%; height: 100%; overflow: visible; }
+.twin-map-stage { padding: 0; }
+.twin-map-stage > div { position: absolute; inset: 0; }
+.twin-map-stage .maplibregl-canvas { filter: saturate(.68) contrast(.94); }
+.twin-quality-badge, .twin-fallback-note { position: absolute; z-index: 4; padding: 6px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface); box-shadow: 0 5px 16px rgba(30, 43, 37, .12); font-size: 7px; font-weight: 850; letter-spacing: .08em; }
+.twin-quality-badge { top: 14px; left: 14px; color: var(--teal); }
+.twin-fallback-note { right: 14px; bottom: 14px; max-width: 230px; color: var(--muted); letter-spacing: 0; }
+.twin-low-avatar { display: grid; width: 28px; height: 34px; place-items: center; border: 2px solid var(--surface); border-radius: 9px 9px 9px 3px; background: var(--ink); box-shadow: 0 8px 18px rgba(20, 28, 25, .28); color: var(--paper); }
 .twin-route-shadow, .twin-route-line { fill: none; stroke-linecap: round; stroke-linejoin: round; }
 .twin-route-shadow { stroke: color-mix(in srgb, var(--ink) 12%, transparent); stroke-width: 11; }
 .twin-route-line { stroke: var(--teal); stroke-width: 3; stroke-dasharray: 2 7; }

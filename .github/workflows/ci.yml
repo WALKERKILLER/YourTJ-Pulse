@@ -61,6 +61,9 @@ jobs:
       - name: Build
         run: pnpm build
 
+      - name: Validate Web performance budgets
+        run: pnpm performance:check
+
       - name: Verify generated data is current
         run: git diff --exit-code -- data/generated data/stable-id-map.json public/assets/data/custom.geojson tongji.pmtiles
 
