@@ -1,0 +1,1 @@
+{"version":1,"campusId":"tongji-siping","projection":"local-equirectangular","earthRadiusMeters":6378137,"origin":{"longitude":121.5012,"latitude":31.2825},"bounds":{"west":121.4916693,"south":31.2800429,"east":121.5031916,"north":31.289292},"metersPerSceneUnit":1,"rotationDegrees":0,"coordinatePrecision":3,"axes":{"x":"east","y":"north"}}

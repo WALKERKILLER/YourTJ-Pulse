@@ -1,6 +1,6 @@
 import type { MapGeoJSONFeature } from 'maplibre-gl';
 import { create } from 'zustand';
-import { displayName } from '../lib/utils';
+import { displayName, featureIdentity } from '../lib/utils';
 
 export interface SelectedPlace {
   id: string;
@@ -22,9 +22,7 @@ interface MapState {
 }
 
 function featureId(feature: MapGeoJSONFeature): string {
-  const propertyId = feature.properties.id;
-  if (typeof propertyId === 'string' && propertyId) return encodeURIComponent(propertyId.replace('/', '-'));
-  return String(feature.id ?? `${feature.layer.id}-${feature.properties.name ?? 'place'}`);
+  return featureIdentity(feature.properties, feature.id, `${feature.layer.id}-${feature.properties.name ?? 'place'}`);
 }
 
 export const useMapStore = create<MapState>((set) => ({

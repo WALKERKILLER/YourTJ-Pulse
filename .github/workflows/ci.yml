@@ -36,6 +36,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install tippecanoe
+        run: |
+          git clone --depth 1 --branch 2.49.0 https://github.com/felt/tippecanoe.git /tmp/tippecanoe
+          test "$(git -C /tmp/tippecanoe rev-parse HEAD)" = "021bb96aeb8b6bcbd93b5cdd309eaecd064d5a4c"
+          make -C /tmp/tippecanoe -j2
+          sudo make -C /tmp/tippecanoe install
+
       - name: Lint
         run: pnpm lint
 
@@ -47,6 +54,9 @@ jobs:
 
       - name: Build
         run: pnpm build
+
+      - name: Verify generated data is current
+        run: git diff --exit-code -- data/generated data/stable-id-map.json public/assets/data/custom.geojson tongji.pmtiles
 
       - name: Validate campus data
         run: pnpm data:validate

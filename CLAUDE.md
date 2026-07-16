@@ -8,7 +8,8 @@
 - `apps/worker/src/index.ts` 是 Worker 主入口；根 `src/index.js` 仅为兼容转发。
 - API、GeoJSON 与实时协议 Schema 位于 `packages/contracts`。
 - 管理 API 只接受 `Authorization: Bearer`，并要求 `moderator` 或 `admin`；禁止默认密钥、Query Token 和 Cookie Token。
-- 旧页面继续位于 `public/`，直到 React 页面达到功能等价。
+- React Web 位于 `apps/web`；旧页面通过 `/legacy-map`、`/legacy-editor`、`/legacy-admin` 保留。
+- `pnpm data:build` 是唯一校园世界编译入口，生成地点、导航、场景、碰撞、PMTiles 与校验清单；依赖 tippecanoe 2.49。
 - 本地门禁为 `pnpm lint`、`pnpm typecheck`、`pnpm test`、`pnpm build`、`pnpm data:validate`。
 - 未经明确授权不得部署、写入远端、提交、推送或修改生产 R2。
 
