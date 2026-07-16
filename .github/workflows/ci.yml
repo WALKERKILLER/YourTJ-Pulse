@@ -33,6 +33,13 @@ jobs:
           node-version: 22
           cache: pnpm
 
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.1
+          channel: stable
+          cache: true
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -51,6 +58,13 @@ jobs:
 
       - name: Verify generated realtime contracts
         run: pnpm contracts:check
+
+      - name: Verify Flutter integration architecture
+        run: pnpm flutter:check
+
+      - name: Analyze and test Flutter integration
+        working-directory: apps/flutter
+        run: flutter pub get --enforce-lockfile && flutter analyze && flutter test
 
       - name: Validate local D1 migrations
         run: pnpm --filter @yourtj/worker db:migrate:local && pnpm --filter @yourtj/worker db:check:local

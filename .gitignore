@@ -7,6 +7,12 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+build/
+
 # 系统文件
 .DS_Store
 Thumbs.db
@@ -14,6 +20,7 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+*.iml
 
 # 数据管线 — 中间产物
 data/geojson/

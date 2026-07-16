@@ -1,0 +1,32 @@
+name: yourtj_pulse_flutter
+description: YourTJ Pulse mobile map and PulseTown shell.
+publish_to: none
+version: 0.1.0+1
+
+environment:
+  sdk: '>=3.5.0 <4.0.0'
+
+dependencies:
+  battery_plus: ^7.1.1
+  connectivity_plus: ^7.3.0
+  flame: ^1.37.0
+  flame_tiled: ^3.1.1
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.3.2
+  geolocator: ^14.0.3
+  http: ^1.6.0
+  maplibre_gl: ^0.26.2
+  permission_handler: ^12.0.3
+  web_socket_channel: ^3.0.3
+
+dev_dependencies:
+  flutter_lints: ^6.0.0
+  flutter_test:
+    sdk: flutter
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/tiles/
+    - assets/sprites/
