@@ -14,6 +14,7 @@
     "contracts:generate": "pnpm --filter @yourtj/contracts protocol:generate",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
+    "performance:check": "pnpm --filter @yourtj/web perf:check",
     "typecheck": "pnpm -r typecheck",
     "data:build": "pnpm --filter @yourtj/data-pipeline build",
     "data:validate": "pnpm --filter @yourtj/data-pipeline validate",
