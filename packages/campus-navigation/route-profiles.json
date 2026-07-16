@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "alternativeEdgePenalty": 1.8,
+  "restrictedAccessPenalty": 1.12,
+  "roughSurfaces": [
+    "cobblestone",
+    "compacted",
+    "dirt",
+    "earth",
+    "fine_gravel",
+    "gravel",
+    "ground",
+    "unpaved"
+  ],
+  "profiles": {
+    "walking": {
+      "speedMetersPerSecond": 1.35,
+      "stairsAllowed": true,
+      "stairsFactor": 1.45,
+      "roughSurfaceFactor": 1.08
+    },
+    "cycling": {
+      "speedMetersPerSecond": 4.2,
+      "stairsAllowed": false,
+      "stairsFactor": 8,
+      "roughSurfaceFactor": 1.25
+    },
+    "wheelchair": {
+      "speedMetersPerSecond": 1.1,
+      "stairsAllowed": false,
+      "stairsFactor": 8,
+      "roughSurfaceFactor": 1.6
+    }
+  }
+}

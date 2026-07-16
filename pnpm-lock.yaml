@@ -47,6 +47,9 @@ importers:
       '@tanstack/react-query':
         specifier: ^5.101.2
         version: 5.101.2(react@19.2.7)
+      '@yourtj/campus-navigation':
+        specifier: workspace:*
+        version: link:../../packages/campus-navigation
       '@yourtj/campus-style':
         specifier: workspace:*
         version: link:../../packages/campus-style
@@ -134,6 +137,8 @@ importers:
         specifier: workspace:*
         version: link:../web
 
+  packages/campus-navigation: {}
+
   packages/campus-style:
     dependencies:
       maplibre-gl:
@@ -146,7 +151,11 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
 
-  packages/data-pipeline: {}
+  packages/data-pipeline:
+    dependencies:
+      pinyin-pro:
+        specifier: 3.28.1
+        version: 3.28.1
 
 packages:
 
@@ -1836,6 +1845,9 @@ packages:
   picomatch@4.0.5:
     resolution: {integrity: sha512-RvwwcruNjI1ncT5xRakeyS9Lf8lcItv34KD+aif+VH9kduAyfYBipGh12274xtenIPZ119/R9BdTBa8gAwSh0A==}
     engines: {node: '>=12'}
+
+  pinyin-pro@3.28.1:
+    resolution: {integrity: sha512-oqz8ulwRgtUXRi0vbqEfGNly19zpyCxYrjhkk5TibGcgSW6eNwS5woajCXRwqURi8Ehc2yOFTiB4uNoZ+NJOnA==}
 
   pmtiles@4.4.1:
     resolution: {integrity: sha512-5oTeQc/yX/ft1evbpIlnoCZugQuug/iYIAj/ZTqIqzdGek4uZEho99En890EE6NOSI3JTI3IG8R7r8+SltphxA==}
@@ -3732,6 +3744,8 @@ snapshots:
   picocolors@1.1.1: {}
 
   picomatch@4.0.5: {}
+
+  pinyin-pro@3.28.1: {}
 
   pmtiles@4.4.1:
     dependencies:

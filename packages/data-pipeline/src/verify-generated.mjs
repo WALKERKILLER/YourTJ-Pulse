@@ -20,7 +20,7 @@ function sha256(value) {
 export async function verifyGeneratedArtifacts() {
   const manifestPath = resolve(repositoryRoot, 'data/generated/manifest.json');
   const manifest = /** @type {{version:number,campusId:string,artifacts:Array<{path:string,bytes:number,sha256:string}>,counts:Record<string,number>}} */ (JSON.parse(await readFile(manifestPath, 'utf8')));
-  if (manifest.version !== 1 || !manifest.campusId || !Array.isArray(manifest.artifacts) || manifest.artifacts.length < 8) {
+  if (manifest.version !== 1 || !manifest.campusId || !Array.isArray(manifest.artifacts) || manifest.artifacts.length < 9) {
     throw new Error('Generated manifest is incomplete');
   }
   for (const artifact of manifest.artifacts) {
@@ -30,8 +30,9 @@ export async function verifyGeneratedArtifacts() {
     if (sha256(bytes) !== artifact.sha256) throw new Error(`${artifact.path} checksum does not match manifest`);
   }
 
-  const [places, graph, scene, collision, worldConfig, custom] = await Promise.all([
+  const [places, search, graph, scene, collision, worldConfig, custom] = await Promise.all([
     readFile(resolve(repositoryRoot, 'data/generated/places.json'), 'utf8').then(JSON.parse),
+    readFile(resolve(repositoryRoot, 'data/generated/search-index.json'), 'utf8').then(JSON.parse),
     readFile(resolve(repositoryRoot, 'data/generated/navigation-graph.json'), 'utf8').then(JSON.parse),
     readFile(resolve(repositoryRoot, 'data/generated/campus-scene.json'), 'utf8').then(JSON.parse),
     readFile(resolve(repositoryRoot, 'data/generated/collision.geojson'), 'utf8').then(JSON.parse),
@@ -45,6 +46,9 @@ export async function verifyGeneratedArtifacts() {
   const scenePlaces = /** @type {Array<{id:string}>} */ (scene.places);
   const placeIds = new Set(typedPlaces.map((place) => place.id));
   if (placeIds.size !== typedPlaces.length || scenePlaces.some((place) => !placeIds.has(place.id))) throw new Error('Generated place IDs are not stable across artifacts');
+  const searchDocuments = /** @type {Array<{id:string,searchText:string}>} */ (search.documents);
+  if (search.campusId !== manifest.campusId || searchDocuments.length !== typedPlaces.length
+    || searchDocuments.some((document) => !placeIds.has(document.id) || !document.searchText)) throw new Error('Search index is inconsistent with place artifacts');
   const customIds = new Set(/** @type {Array<{properties?:{stable_id?:string}}>} */ (custom.features).map((feature) => feature.properties?.stable_id).filter((id) => typeof id === 'string'));
   if (customIds.size !== custom.features.length) throw new Error('Map features do not have unique stable IDs');
   const navigationNodeIds = new Set(/** @type {Array<{id:string}>} */ (graph.nodes).map((node) => node.id));
@@ -61,7 +65,8 @@ export async function verifyGeneratedArtifacts() {
     || manifest.counts.navigationNodes !== graph.nodes.length
     || manifest.counts.navigationEdges !== graph.edges.length
     || manifest.counts.sceneBuildings !== scene.buildings.length
-    || manifest.counts.collisions !== collision.features.length) throw new Error('Manifest counts do not match generated artifacts');
+    || manifest.counts.collisions !== collision.features.length
+    || manifest.counts.searchDocuments !== searchDocuments.length) throw new Error('Manifest counts do not match generated artifacts');
   const routablePlaces = /** @type {Array<{name:string,category:string,entranceNodeIds:string[]}>} */ (places);
   const dormitories = routablePlaces.filter((place) => place.entranceNodeIds.length > 0
     && (place.category === 'dormitory' || place.category === 'hostel' || /宿舍|学[一二三四五六七八九]楼|西北|西南/.test(place.name)));
