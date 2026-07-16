@@ -135,6 +135,9 @@ importers:
       hono:
         specifier: ^4.12.30
         version: 4.12.30
+      pmtiles:
+        specifier: ^4.4.1
+        version: 4.4.1
       zod:
         specifier: ^4.4.3
         version: 4.4.3

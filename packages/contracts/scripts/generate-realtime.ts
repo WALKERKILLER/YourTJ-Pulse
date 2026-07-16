@@ -68,6 +68,8 @@ class RealtimeLocation {
   };
 }
 
+typedef LocationUpdate = RealtimeLocation;
+
 class RoomMember {
   const RoomMember({required this.userId, required this.displayName, required this.presence, required this.sharingLocation, required this.connectionStatus, required this.joinedAt, required this.updatedAt, this.avatarUrl, this.location});
 
