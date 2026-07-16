@@ -3,6 +3,7 @@ import {
   serverMessageSchema,
   type ClientMessage,
   type CreatePinInput,
+  type LocationSharingLevel,
   type PresenceStatus,
   type RealtimeLocation,
   type ServerMessage,
@@ -10,6 +11,7 @@ import {
 } from '@yourtj/contracts';
 
 import type { RealtimeConnectionStatus } from '../../stores/realtime-store';
+import { reportClientTelemetry } from '../../lib/telemetry';
 
 export const REALTIME_PROTOCOL = 'yourtj.realtime.v1';
 const AUTH_PROTOCOL_PREFIX = 'yourtj.auth.';
@@ -103,8 +105,17 @@ export class RoomRealtimeClient {
     else void this.openSocket();
   }
 
-  updatePresence(status: PresenceStatus, sharingLocation: boolean): string {
-    return this.queue({ type: 'presence.update', requestId: requestId(), sentAt: Date.now(), payload: { status, sharingLocation } });
+  updatePresence(status: PresenceStatus, locationSharingLevel: LocationSharingLevel): string {
+    return this.queue({
+      type: 'presence.update',
+      requestId: requestId(),
+      sentAt: Date.now(),
+      payload: {
+        status,
+        sharingLocation: locationSharingLevel !== 'hidden',
+        locationSharingLevel,
+      },
+    });
   }
 
   sendLocation(location: RealtimeLocation): string {
@@ -154,6 +165,9 @@ export class RoomRealtimeClient {
 
   private handleOpen(socket: WebSocket): void {
     if (socket !== this.socket || this.stopped) return;
+    if (this.reconnectAttempt > 0) {
+      reportClientTelemetry({ event: 'realtime.reconnect', result: 'recovered' });
+    }
     this.reconnectAttempt = 0;
     this.snapshotReceived = false;
     this.options.onStatus('connected');

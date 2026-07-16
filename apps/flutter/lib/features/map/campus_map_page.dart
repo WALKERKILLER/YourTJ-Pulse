@@ -273,15 +273,27 @@ class _CampusMapPageState extends ConsumerState<CampusMapPage> {
                     child: const Icon(Icons.my_location)),
                 if (widget.roomSession != null) ...[
                   const SizedBox(height: 10),
-                  FloatingActionButton.small(
-                    heroTag: 'share-location',
-                    onPressed: () {
-                      final enabled = !state.locationSharingEnabled;
-                      widget.roomSession!.setLocationSharing(enabled);
-                    },
-                    child: Icon(state.locationSharingEnabled
-                        ? Icons.location_off
-                        : Icons.share_location),
+                  PopupMenuButton<LocationSharingLevel>(
+                    tooltip: '房间位置共享级别',
+                    initialValue: state.locationSharingLevel,
+                    onSelected: widget.roomSession!.setLocationSharingLevel,
+                    itemBuilder: (context) => const [
+                      PopupMenuItem(
+                        value: LocationSharingLevel.approximate,
+                        child: Text('模糊共享（约 80 米）'),
+                      ),
+                      PopupMenuItem(
+                        value: LocationSharingLevel.precise,
+                        child: Text('精确共享'),
+                      ),
+                      PopupMenuItem(
+                        value: LocationSharingLevel.hidden,
+                        child: Text('停止并隐藏'),
+                      ),
+                    ],
+                    icon: Icon(state.locationSharingEnabled
+                        ? Icons.share_location
+                        : Icons.location_off),
                   ),
                 ],
               ],

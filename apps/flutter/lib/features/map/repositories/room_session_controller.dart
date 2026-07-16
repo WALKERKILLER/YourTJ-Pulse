@@ -14,7 +14,7 @@ class RoomSessionController {
   final RealtimeRoomRepository repository;
   final CampusMapController stateController;
   StreamSubscription<ServerMessage>? _subscription;
-  bool _sharingEnabled = false;
+  LocationSharingLevel _sharingLevel = LocationSharingLevel.hidden;
   String? _roomId;
   List<RoomMember> _members = const [];
   List<Pin> _pins;
@@ -28,14 +28,17 @@ class RoomSessionController {
     repository.join(requestId: 'join-${DateTime.now().microsecondsSinceEpoch}');
   }
 
-  void setLocationSharing(bool enabled) {
-    _sharingEnabled = enabled;
-    stateController.setLocationSharing(enabled);
-    repository.updatePresence(sharingEnabled: enabled);
+  void setLocationSharingLevel(LocationSharingLevel level) {
+    _sharingLevel = level;
+    stateController.setLocationSharingLevel(level);
+    repository.updatePresence(sharingLevel: level);
   }
 
   void publishLocation(LocationUpdate update) {
-    repository.updateLocation(update, sharingEnabled: _sharingEnabled);
+    repository.updateLocation(
+      update,
+      sharingEnabled: _sharingLevel != LocationSharingLevel.hidden,
+    );
   }
 
   void _accept(ServerMessage message) {
@@ -88,6 +91,9 @@ class RoomSessionController {
                     presence: PresenceStatus.values
                         .byName(message.payload['presence'] as String),
                     sharingLocation: message.payload['sharingLocation'] as bool,
+                    locationSharingLevel: LocationSharingLevel.values.byName(
+                      message.payload['locationSharingLevel'] as String,
+                    ),
                     updatedAt: message.payload['updatedAt'] as int,
                   )
                 : member)
@@ -120,6 +126,7 @@ class RoomSessionController {
     RoomMember member, {
     PresenceStatus? presence,
     bool? sharingLocation,
+    LocationSharingLevel? locationSharingLevel,
     int? updatedAt,
     RealtimeLocation? location,
   }) =>
@@ -129,6 +136,8 @@ class RoomSessionController {
         avatarUrl: member.avatarUrl,
         presence: presence ?? member.presence,
         sharingLocation: sharingLocation ?? member.sharingLocation,
+        locationSharingLevel:
+            locationSharingLevel ?? member.locationSharingLevel,
         connectionStatus: member.connectionStatus,
         joinedAt: member.joinedAt,
         updatedAt: updatedAt ?? member.updatedAt,
@@ -136,6 +145,11 @@ class RoomSessionController {
       );
 
   Future<void> close() async {
+    if (_sharingLevel != LocationSharingLevel.hidden) {
+      repository.updatePresence(sharingLevel: LocationSharingLevel.hidden);
+      _sharingLevel = LocationSharingLevel.hidden;
+      stateController.setLocationSharingLevel(LocationSharingLevel.hidden);
+    }
     await _subscription?.cancel();
     await repository.close();
   }

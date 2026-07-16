@@ -50,11 +50,16 @@ class RealtimeRoomRepository {
         payload: location.toJson()));
   }
 
-  void updatePresence({required bool sharingEnabled}) => _send(ClientMessage(
+  void updatePresence({required LocationSharingLevel sharingLevel}) =>
+      _send(ClientMessage(
         type: 'presence.update',
         requestId: 'presence-${DateTime.now().microsecondsSinceEpoch}',
         sentAt: DateTime.now().millisecondsSinceEpoch,
-        payload: {'status': 'available', 'sharingLocation': sharingEnabled},
+        payload: {
+          'status': 'available',
+          'sharingLocation': sharingLevel != LocationSharingLevel.hidden,
+          'locationSharingLevel': sharingLevel.name,
+        },
       ));
 
   void accept(ServerMessage message) {

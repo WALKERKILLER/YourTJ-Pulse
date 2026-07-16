@@ -23,7 +23,7 @@ class FakeRealtimeRoomRepository extends RealtimeRoomRepository {
   void accept(ServerMessage message) {}
 
   @override
-  void updatePresence({required bool sharingEnabled}) {}
+  void updatePresence({required LocationSharingLevel sharingLevel}) {}
 
   @override
   Future<void> close() => messages.close();
@@ -54,6 +54,7 @@ void main() {
             'displayName': 'Friend',
             'presence': 'available',
             'sharingLocation': true,
+            'locationSharingLevel': 'approximate',
             'connectionStatus': 'live',
             'joinedAt': 900,
             'updatedAt': 1000,

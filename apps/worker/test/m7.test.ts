@@ -127,5 +127,17 @@ describe('M7 twin plan API', () => {
     expect(columns.results.map(({ name }) => name)).not.toEqual(expect.arrayContaining(['longitude', 'latitude', 'coordinates_json']));
     const cancelled = await data<{ status: string }>(await request(env, `/api/twin/plans/${plan.id}`, { method: 'DELETE' }));
     expect(cancelled.status).toBe('cancelled');
+
+    const disabled = await request(env, '/api/twin/profile', {
+      method: 'PATCH', body: JSON.stringify({ simulationEnabled: false }),
+    });
+    expect(await data(disabled)).toMatchObject({ enabled: true, simulationEnabled: false });
+    expect(await data<unknown[]>(await request(env, '/api/twin/events'))).toHaveLength(0);
+    expect(await data<unknown[]>(await request(env, '/api/twin/plans'))).toHaveLength(0);
+    expect(await database.binding.prepare(
+      "SELECT metadata_json FROM audit_logs WHERE action = 'twin.profile.update' ORDER BY created_at DESC LIMIT 1",
+    ).first()).toEqual({
+      metadata_json: '{"enabled":true,"simulationEnabled":false,"simulationDataDeleted":true}',
+    });
   });
 });

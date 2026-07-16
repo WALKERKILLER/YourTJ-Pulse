@@ -12,6 +12,7 @@ export const locationKindSchema = z.enum([
 
 export const presenceStatusSchema = z.enum(['available', 'busy', 'away']);
 export const memberConnectionStatusSchema = z.enum(['live', 'delayed', 'stale', 'offline']);
+export const locationSharingLevelSchema = z.enum(['precise', 'approximate', 'hidden']);
 
 export const realtimeLocationSchema = z.object({
   seq: z.number().int().nonnegative(),
@@ -47,6 +48,7 @@ export const presenceUpdateMessageSchema = clientEnvelopeSchema.extend({
   payload: z.object({
     status: presenceStatusSchema,
     sharingLocation: z.boolean(),
+    locationSharingLevel: locationSharingLevelSchema.optional(),
   }).strict(),
 }).strict();
 
@@ -92,6 +94,7 @@ export const realtimeMemberSchema = z.object({
   avatarUrl: z.url().optional(),
   presence: presenceStatusSchema,
   sharingLocation: z.boolean(),
+  locationSharingLevel: locationSharingLevelSchema,
   connectionStatus: memberConnectionStatusSchema,
   joinedAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
@@ -155,6 +158,7 @@ export const memberPresenceMessageSchema = serverEnvelopeSchema.extend({
     userId: z.string().min(1).max(128),
     presence: presenceStatusSchema,
     sharingLocation: z.boolean(),
+    locationSharingLevel: locationSharingLevelSchema,
     updatedAt: z.number().int().nonnegative(),
   }).strict(),
 }).strict();
@@ -221,6 +225,7 @@ export type LocationKind = z.infer<typeof locationKindSchema>;
 export type RealtimeLocation = z.infer<typeof realtimeLocationSchema>;
 export type PresenceStatus = z.infer<typeof presenceStatusSchema>;
 export type MemberConnectionStatus = z.infer<typeof memberConnectionStatusSchema>;
+export type LocationSharingLevel = z.infer<typeof locationSharingLevelSchema>;
 export type JoinRoomMessage = z.infer<typeof joinRoomMessageSchema>;
 export type LocationUpdate = z.infer<typeof locationUpdateSchema>;
 export type PresenceUpdateMessage = z.infer<typeof presenceUpdateMessageSchema>;

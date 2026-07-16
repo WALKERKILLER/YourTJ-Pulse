@@ -4,4 +4,5 @@ export * from './business';
 export * from './geojson';
 export * from './limits';
 export * from './realtime';
+export * from './telemetry';
 export * from './twin';

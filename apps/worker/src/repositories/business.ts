@@ -318,6 +318,20 @@ export async function deleteRoom(db: D1Database, roomId: string, user: Authentic
   ]);
 }
 
+export async function cleanupExpiredCollaborationData(
+  db: D1Database,
+  timestamp: string = now(),
+): Promise<{ deletedPins: number; deletedRooms: number }> {
+  const [pins, rooms] = await db.batch([
+    db.prepare('DELETE FROM pins WHERE expires_at IS NOT NULL AND expires_at <= ?').bind(timestamp),
+    db.prepare('DELETE FROM rooms WHERE expires_at IS NOT NULL AND expires_at <= ?').bind(timestamp),
+  ]);
+  return {
+    deletedPins: pins?.meta.changes ?? 0,
+    deletedRooms: rooms?.meta.changes ?? 0,
+  };
+}
+
 async function pinRow(db: D1Database, pinId: string, userId: string): Promise<PinRow | null> {
   return db.prepare(
     `SELECT p.*, r.expires_at AS room_expires_at, rm.role AS membership_role
@@ -734,15 +748,24 @@ export async function updateTwinProfile(db: D1Database, user: AuthenticatedUser,
     privacyMode: input.privacyMode ?? current.privacyMode,
     updatedAt: now(),
   };
-  await db.batch([
+  const explicitlyDisabled = input.enabled === false || input.simulationEnabled === false;
+  const statements = [
     db.prepare(
       `INSERT INTO twin_profiles (user_id, enabled, simulation_enabled, home_place_id, avatar_id, privacy_mode, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(user_id) DO UPDATE SET enabled = excluded.enabled, simulation_enabled = excluded.simulation_enabled, home_place_id = excluded.home_place_id,
          avatar_id = excluded.avatar_id, privacy_mode = excluded.privacy_mode, updated_at = excluded.updated_at`,
     ).bind(user.id, profile.enabled ? 1 : 0, profile.simulationEnabled ? 1 : 0, profile.homePlaceId, profile.avatarId, profile.privacyMode, profile.updatedAt),
-    auditStatement(db, user.id, 'twin.profile.update', 'twin_profile', user.id),
-  ]);
+    auditStatement(db, user.id, 'twin.profile.update', 'twin_profile', user.id, {
+      enabled: profile.enabled,
+      simulationEnabled: profile.simulationEnabled,
+      simulationDataDeleted: explicitlyDisabled && !profile.simulationEnabled,
+    }),
+  ];
+  if (explicitlyDisabled && !profile.simulationEnabled) {
+    statements.splice(1, 0, db.prepare('DELETE FROM twin_events WHERE user_id = ?').bind(user.id));
+  }
+  await db.batch(statements);
   return { userId: user.id, ...profile };
 }
 

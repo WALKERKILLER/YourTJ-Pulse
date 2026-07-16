@@ -43,6 +43,9 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install Playwright browsers
+        run: pnpm exec playwright install --with-deps chromium firefox
+
       - name: Install tippecanoe
         run: |
           git clone --depth 1 --branch 2.49.0 https://github.com/felt/tippecanoe.git /tmp/tippecanoe
@@ -71,6 +74,9 @@ jobs:
 
       - name: Test
         run: pnpm test
+
+      - name: Test Web user journeys
+        run: pnpm e2e
 
       - name: Build
         run: pnpm build

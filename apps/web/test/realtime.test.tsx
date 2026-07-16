@@ -145,7 +145,7 @@ describe('RoomRealtimeClient and member store', () => {
     const store = useRealtimeStore.getState();
     store.applyMessage(serverMessage({
       type: 'room.snapshot', sequence: 10, payload: { roomId: 'room-1', members: [{
-        userId: 'alice', displayName: 'Alice', presence: 'available', sharingLocation: true,
+        userId: 'alice', displayName: 'Alice', presence: 'available', sharingLocation: true, locationSharingLevel: 'precise',
         connectionStatus: 'live', joinedAt: 1, updatedAt: 10,
         location: { seq: 1, longitude: 121.5, latitude: 31.28, accuracy: 10, kind: 'gps' },
       }] },
@@ -197,6 +197,7 @@ describe('RoomRealtimeClient and member store', () => {
   it('requests refreshed credentials before reconnecting after close code 4001', async () => {
     vi.useFakeTimers();
     vi.spyOn(Math, 'random').mockReturnValue(0);
+    const telemetry = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 202 }));
     const sockets: TestWebSocket[] = [];
     const offeredProtocols: string[][] = [];
     const tokenProvider = vi.fn((forceRefresh?: boolean) => forceRefresh ? 'fresh-token' : 'expired-token');
@@ -219,6 +220,11 @@ describe('RoomRealtimeClient and member store', () => {
     expect(sockets).toHaveLength(2);
     expect(tokenProvider).toHaveBeenLastCalledWith(true);
     expect(offeredProtocols[1]).not.toEqual(offeredProtocols[0]);
+    expect(telemetry).not.toHaveBeenCalled();
+    sockets[1]!.open();
+    expect(telemetry).toHaveBeenCalledWith('/api/telemetry', expect.objectContaining({
+      body: JSON.stringify({ event: 'realtime.reconnect', result: 'recovered' }),
+    }));
     client.stop();
   });
 });

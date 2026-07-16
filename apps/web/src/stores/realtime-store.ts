@@ -68,7 +68,13 @@ export const useRealtimeStore = create<RealtimeState>((set) => ({
       case 'member.presence': {
         const current = members[message.payload.userId];
         if (!current) break;
-        const next = { ...current, presence: message.payload.presence, sharingLocation: message.payload.sharingLocation, updatedAt: message.payload.updatedAt };
+        const next = {
+          ...current,
+          presence: message.payload.presence,
+          sharingLocation: message.payload.sharingLocation,
+          locationSharingLevel: message.payload.locationSharingLevel,
+          updatedAt: message.payload.updatedAt,
+        };
         if (!message.payload.sharingLocation) delete next.location;
         members[message.payload.userId] = next;
         break;
