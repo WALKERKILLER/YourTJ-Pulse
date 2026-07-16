@@ -10,6 +10,10 @@ export interface PropertyDiff {
 }
 
 export function findFeatureById(features: GeoJsonFeature[], feature: GeoJsonFeature): GeoJsonFeature | undefined {
+  const stableId = feature.properties?.stable_id;
+  if (typeof stableId === 'string' && stableId) {
+    return features.find((candidate) => candidate.properties?.stable_id === stableId);
+  }
   if (feature.id === undefined) return undefined;
   return features.find(({ id }) => String(id) === String(feature.id));
 }

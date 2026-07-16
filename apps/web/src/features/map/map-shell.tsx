@@ -16,11 +16,13 @@ import {
 } from 'lucide-react';
 import { useEffect, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
+import worldConfig from '../../../../../data/generated/world-config.json';
 import { Map, MapControls } from '../../components/map/map';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Skeleton } from '../../components/ui/skeleton';
 import { registerPmtilesProtocol } from '../../lib/pmtiles';
+import { featureIdentity } from '../../lib/utils';
 import { useMapStore } from '../../stores/map-store';
 import { usePreferencesStore } from '../../stores/preferences-store';
 
@@ -189,7 +191,7 @@ export function MapShell() {
     const [feature] = event.target.queryRenderedFeatures(event.point, { layers: [...layers] });
     setSelectedFeature(feature ?? null);
     if (feature) {
-      const id = typeof feature.properties.id === 'string' ? feature.properties.id.replace('/', '-') : String(feature.id ?? 'selected');
+      const id = featureIdentity(feature.properties, feature.id);
       navigate(`/place/${encodeURIComponent(id)}`);
     }
   }
@@ -200,11 +202,11 @@ export function MapShell() {
         <Map
           mapStyle={mapStyle}
           initialViewState={{
-            center: [121.5012, 31.2825],
+            center: [worldConfig.origin.longitude, worldConfig.origin.latitude],
             zoom: 15.5,
             pitch: 42,
             bearing: -8,
-            maxBounds: [[121.48, 31.27], [121.52, 31.295]],
+            maxBounds: [[worldConfig.bounds.west, worldConfig.bounds.south], [worldConfig.bounds.east, worldConfig.bounds.north]],
           }}
           onClick={selectFeature}
           onError={() => setMapError(true)}

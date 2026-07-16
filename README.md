@@ -4,7 +4,7 @@
 
 YourTJ Pulse 是面向同济大学的实时协作地图与数字校园分身平台。项目从原 YTJ-Map 演进而来：基础地图继续使用 OpenStreetMap、MapLibre 与 PMTiles，应用层逐步扩展地点搜索、校园导航、多人房间和 PulseTown 数字校园模式。
 
-当前处于工程与安全基线阶段。旧地图、编辑器和审核页仍保留，React Web、校园世界编译器与 Flutter 示例将按 `map-plan.md` 分阶段接入。
+当前已完成工程与安全基线、React 地图基础和校园世界编译器。旧地图、编辑器和审核页仍通过 `/legacy-map`、`/legacy-editor`、`/legacy-admin` 保留，后续导航、实时协作与 Flutter 客户端按 `map-plan.md` 分阶段接入。
 
 ## 产品模式
 
@@ -15,26 +15,30 @@ YourTJ Pulse 是面向同济大学的实时协作地图与数字校园分身平�
 
 - Worker：Cloudflare Workers、Hono、TypeScript、R2。
 - 契约：Zod、共享 TypeScript Schema、统一 API 响应。
-- 旧版地图：MapLibre GL、PMTiles、原生 HTML/CSS/JavaScript。
+- Web：React 19、Vite、MapLibre GL、PMTiles、TanStack Query、Zustand。
+- 数据：稳定 ID、WGS84/本地场景坐标、导航图、场景与碰撞数据编译器。
 - 工程：pnpm Workspace、Vitest、ESLint、GitHub Actions。
 
 ## 项目结构
 
 ```text
+apps/web/                   # React 地图、编辑器、审核台与旧版入口
 apps/worker/                # 模块化 Cloudflare Worker
   src/auth/                 # Bearer 身份认证与角色授权
   src/routes/               # Tiles、地点和审核路由
   src/repositories/         # R2 数据访问
 packages/contracts/         # API、GeoJSON 与实时协议 Schema
-packages/data-pipeline/     # 数据校验和后续世界编译入口
-public/                     # 迁移期保留的旧地图、编辑器和管理页
-data/                       # OSM/GeoJSON 数据与旧构建脚本
+packages/campus-style/      # Web 共用地图样式与交互图层 ID
+packages/data-pipeline/     # 校园世界编译与产物校验
+public/                     # 静态资源与迁移期旧页面
+data/generated/             # 地点、导航、场景、碰撞、PMTiles 与 manifest
+data/                       # 源 GeoJSON、世界配置、稳定 ID 映射与旧脚本
 .github/                    # CI、Issue 与 PR 模板
 ```
 
 ## 本地开发
 
-要求：Node.js 22、pnpm 10.33、Wrangler 4、osmium、tippecanoe。仓库提供 `.mise.toml`，首次使用时请自行检查内容后运行 `mise trust`。
+要求：Node.js 22、pnpm 10.33、Wrangler 4、tippecanoe 2.49。只有刷新 OSM 源数据时才额外需要 osmium。仓库提供 `.mise.toml`，首次使用时请自行检查内容后运行 `mise trust`。
 
 ```bash
 corepack enable
@@ -57,7 +61,17 @@ pnpm data:validate
 
 ## 数据构建
 
-`pnpm data:validate` 会检查当前全量 GeoJSON 和旧地图主数据的结构、坐标范围与重复 ID。`pnpm data:build` 目前执行同一基线校验；后续 TASK-200～206 会在该入口加入稳定地点 ID、导航图、场景、碰撞数据、PMTiles、manifest 与 checksum。
+`pnpm data:build` 是唯一世界编译入口：它校验 `data/full.geojson`，按 `stable_id → OSM 类型/ID → 持久化指纹` 生成稳定 ID，再一次性输出地点目录、导航图、场景、碰撞数据、9 图层 PMTiles、旧地图主数据和带 SHA-256 的 manifest。输入与参数不变时，重复构建会得到字节一致的产物。
+
+主要生成文件：
+
+- `data/generated/places.json`：Web 与游戏共用的地点、别名、分类、入口和场景坐标。
+- `data/generated/navigation-graph.json`：步行、骑行、无障碍、台阶、室内和表面属性完整的有向图。
+- `data/generated/campus-scene.json`、`collision.geojson`：数字校园场景与碰撞边界。
+- `data/generated/world-config.json`：WGS84 与本地米制场景坐标的共享参数。
+- `data/generated/tongji.pmtiles`、`manifest.json`：矢量瓦片与版本、数量、校验和清单。
+
+`pnpm data:validate` 会同时核验源 GeoJSON、共享 ID、产物校验和、PMTiles 完整性，以及宿舍到教学楼的基础步行路径。
 
 地图与游戏世界必须使用同一地点 ID。正式地图 Feature、临时协作 Pin 与模拟分身位置不得混用。
 

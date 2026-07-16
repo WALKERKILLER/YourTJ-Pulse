@@ -12,3 +12,10 @@ export function displayName(properties: Record<string, unknown>): string {
   }
   return '未命名地点';
 }
+
+export function featureIdentity(properties: Record<string, unknown>, sourceId?: string | number, fallback = 'selected'): string {
+  for (const value of [properties.stable_id, properties.id, sourceId]) {
+    if ((typeof value === 'string' && value.trim()) || typeof value === 'number') return String(value);
+  }
+  return fallback;
+}

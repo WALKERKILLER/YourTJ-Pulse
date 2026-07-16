@@ -1,6 +1,6 @@
 import type { GeoJsonFeature } from '@yourtj/contracts';
 import { describe, expect, it } from 'vitest';
-import { geometryChanged, propertyDiff } from '../src/features/map/diff-utils';
+import { findFeatureById, geometryChanged, propertyDiff } from '../src/features/map/diff-utils';
 import { applyEditorFields, fieldsFromFeature } from '../src/features/map/editor-utils';
 
 const original: GeoJsonFeature = {
@@ -32,5 +32,11 @@ describe('editor and review helpers', () => {
       ['wheelchair', 'changed'],
     ]);
     expect(geometryChanged(original, updated)).toBe(false);
+  });
+
+  it('matches reviewed features by shared stable ID before source ID', () => {
+    const stableOriginal = { ...original, properties: { ...original.properties, stable_id: 'tongji-siping-node-1' } } satisfies GeoJsonFeature;
+    const reviewed = { ...stableOriginal, id: 'generated/9' } satisfies GeoJsonFeature;
+    expect(findFeatureById([stableOriginal], reviewed)).toBe(stableOriginal);
   });
 });

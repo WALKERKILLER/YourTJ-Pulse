@@ -4,10 +4,10 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node src/validate.mjs",
+    "build": "node src/compiler.mjs",
     "test": "node --test test/*.test.mjs",
     "lint": "eslint src test",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "validate": "node src/validate.mjs"
+    "validate": "node src/validate.mjs && node src/verify-generated.mjs"
   }
 }
