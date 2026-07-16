@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "pnpm --parallel --filter './apps/*' dev",
-    "build": "pnpm -r build",
+    "build": "pnpm --filter @yourtj/web build && pnpm --filter @yourtj/worker build && pnpm --filter './packages/*' build",
     "test": "pnpm -r test",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",

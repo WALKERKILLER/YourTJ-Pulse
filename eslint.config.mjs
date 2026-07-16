@@ -31,4 +31,12 @@ export default tseslint.config(
     files: ['apps/worker/**/*.ts'],
     languageOptions: { globals: globals.serviceworker },
   },
+  {
+    files: ['apps/web/**/*.{ts,tsx}'],
+    languageOptions: { globals: globals.browser },
+  },
+  {
+    files: ['apps/web/**/*.mjs'],
+    languageOptions: { globals: globals.node },
+  },
 );

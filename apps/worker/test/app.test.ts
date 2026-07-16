@@ -168,6 +168,18 @@ describe('worker application', () => {
     expect(await response.json()).toEqual({ data: [] });
   });
 
+  it('returns the authenticated session without exposing credentials', async () => {
+    const response = await createApp().request(
+      '/api/me',
+      { headers: { authorization: `Bearer ${adminCredential}` } },
+      bindings,
+    );
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      data: { id: 'admin-1', displayName: 'Admin', roles: ['admin'] },
+    });
+  });
+
   it('preserves legacy review API success response shapes', async () => {
     const listResponse = await createApp().request(
       '/api/submissions',
@@ -245,6 +257,39 @@ describe('worker application', () => {
       reviewMessage: '结构与属性正确',
     });
     expect(bucket.json<{ features: unknown[] }>('data/custom.geojson').features).toHaveLength(1);
+  });
+
+  it('validates and applies reviewer-modified features while retaining the original', async () => {
+    const createResponse = await createApp().request(
+      '/api/submit',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ features: [feature] }),
+      },
+      bindings,
+    );
+    const created = await createResponse.json<{ id: string }>();
+    const reviewedFeature = { ...feature, properties: { name: '审核后名称', wheelchair: 'yes' } };
+
+    const applyResponse = await createApp().request(
+      `/api/admin/submissions/${created.id}/apply`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${adminCredential}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ features: [reviewedFeature] }),
+      },
+      bindings,
+    );
+
+    expect(applyResponse.status).toBe(200);
+    expect(bucket.json<{ features: typeof feature[] }>('data/custom.geojson').features[0]?.properties.name).toBe('审核后名称');
+    const stored = bucket.json<{ features: typeof feature[]; reviewedFeatures: typeof feature[] }>(`submissions/${created.id}.json`);
+    expect(stored.features[0]?.properties.name).toBe('测试地点');
+    expect(stored.reviewedFeatures[0]?.properties.name).toBe('审核后名称');
   });
 
   it('serves existing map data and PMTiles objects', async () => {

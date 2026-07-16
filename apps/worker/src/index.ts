@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 
 import { placesRouter } from './routes/places';
+import { sessionRouter } from './routes/session';
 import { adminSubmissionsRouter, submissionsRouter } from './routes/submissions';
 import { tilesRouter } from './routes/tiles';
 import type { WorkerEnv } from './types';
@@ -14,6 +15,7 @@ export function createApp() {
   app.use('*', enforceCors);
 
   apiRouter.route('/', placesRouter);
+  apiRouter.route('/', sessionRouter);
   apiRouter.route('/', submissionsRouter);
   apiRouter.route('/admin/submissions', adminSubmissionsRouter);
 
